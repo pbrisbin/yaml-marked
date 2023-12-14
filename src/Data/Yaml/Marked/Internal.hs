@@ -25,6 +25,7 @@ import Data.ByteString (ByteString)
 import Data.Char (isOctDigit, ord, toUpper)
 import Data.Conduit (ConduitM, runConduit, (.|))
 import qualified Data.Conduit.List as CL
+import Data.Foldable (traverse_)
 import qualified Data.List as List
 import Data.Map (Map)
 import qualified Data.Map as Map
@@ -94,8 +95,8 @@ parse :: ReaderT JSONPath (ConduitM MarkedEvent o Parse) MarkedValue
 parse = do
   docs <- parseAll
   case docs of
-    [] -> return $ markedZero Marked.Null
-    [doc] -> return doc
+    [] -> pure $ markedZero Marked.Null
+    [doc] -> pure doc
     _ -> liftIO $ throwIO MultipleDocuments
 
 parseAll :: ReaderT JSONPath (ConduitM MarkedEvent o Parse) [MarkedValue]
@@ -104,7 +105,7 @@ parseAll = do
   case streamStart of
     Nothing ->
       -- empty string input
-      return []
+      pure []
     Just (MarkedEvent EventStreamStart _ _) ->
       -- empty file input, comment only string/file input
       parseDocs
@@ -113,7 +114,7 @@ parseAll = do
   parseDocs = do
     documentStart <- lift CL.head
     case documentStart of
-      Just (MarkedEvent EventStreamEnd _ _) -> return []
+      Just (MarkedEvent EventStreamEnd _ _) -> pure []
       Just (MarkedEvent EventDocumentStart _ _) -> do
         res <- parseO
         requireEvent EventDocumentEnd
@@ -132,8 +133,8 @@ parseScalar e v a style tag = do
   let
     res = decodeUtf8With lenientDecode v
     anc = markedValueFromEvent e $ textToValue style tag res
-  mapM_ (defineAnchor anc) a
-  return res
+  traverse_ (defineAnchor anc) a
+  pure res
 
 textToValue :: Style -> Tag -> Text -> Marked.Value
 textToValue SingleQuoted _ t = Marked.String t
@@ -179,7 +180,7 @@ parseO = do
       m <- lookupAnchor an
       case m of
         Nothing -> liftIO $ throwIO $ UnknownAlias an
-        Just v -> return v
+        Just v -> pure v
     _ -> liftIO $ throwIO $ UnexpectedEvent (yamlEvent <$> me) Nothing
 
 parseS
@@ -198,8 +199,8 @@ parseS startMark !n a front = do
               (Marked.Array $ V.fromList $ front [])
               startMark
               endMark
-      mapM_ (defineAnchor res) a
-      return res
+      traverse_ (defineAnchor res) a
+      pure res
     _ -> do
       o <- local (Index n :) parseO
       parseS startMark (succ n) a $ front . (:) o
@@ -215,8 +216,8 @@ parseM startMark mergedKeys a front = do
   case me of
     Just (MarkedEvent EventMappingEnd _ endMark) -> do
       let res = markedItem (Marked.Object front) startMark endMark
-      mapM_ (defineAnchor res) a
-      return res
+      traverse_ (defineAnchor res) a
+      pure res
     _ -> do
       s <- case me of
         Just e@(MarkedEvent (EventScalar v tag style a') _ _) ->
@@ -225,7 +226,7 @@ parseM startMark mergedKeys a front = do
           m <- lookupAnchor an
           case m of
             Nothing -> liftIO $ throwIO $ UnknownAlias an
-            Just v | Marked.String t <- getMarkedItem v -> return $ fromText t
+            Just v | Marked.String t <- getMarkedItem v -> pure $ fromText t
             Just v -> liftIO $ throwIO $ NonStringKeyAlias an $ markedValueToValue v
         _ -> do
           path <- ask
@@ -237,11 +238,11 @@ parseM startMark mergedKeys a front = do
               when (M.member s front && Set.notMember s mergedKeys) $ do
                 path <- asks reverse
                 addWarning (DuplicateKey path)
-              return (Set.delete s mergedKeys, M.insert s o front)
+              pure (Set.delete s mergedKeys, M.insert s o front)
         if s == "<<"
           then case getMarkedItem o of
-            Marked.Object l -> return (merge l)
-            Marked.Array l -> return $ merge $ List.foldl' mergeObjects M.empty $ V.toList l
+            Marked.Object l -> pure (merge l)
+            Marked.Array l -> pure $ merge $ List.foldl' mergeObjects M.empty $ V.toList l
             _ -> al
           else al
       parseM startMark mergedKeys' a al'
@@ -274,8 +275,8 @@ mkHelper
 mkHelper eventParser onOtherExc extractResults src =
   catches
     (extractResults <$> parseSrc eventParser src)
-    [ Handler $ \pe -> return $ Left (pe :: ParseException)
-    , Handler $ \ye -> return $ Left $ InvalidYaml $ Just (ye :: YamlException)
+    [ Handler $ \pe -> pure $ Left (pe :: ParseException)
+    , Handler $ \ye -> pure $ Left $ InvalidYaml $ Just (ye :: YamlException)
     , Handler $ \sae -> throwIO (sae :: SomeAsyncException)
     , Handler onOtherExc
     ]
@@ -295,7 +296,7 @@ decodeAllHelper parseMarked = mkHelper parseAll throwIO $ \(vs, st) ->
   Right (parseStateWarnings st, mapM parseMarked vs)
 
 catchLeft :: SomeException -> IO (Either ParseException a)
-catchLeft = return . Left . OtherParseException
+catchLeft = pure . Left . OtherParseException
 
 decodeHelper_
   :: (MarkedValue -> Either String a)
