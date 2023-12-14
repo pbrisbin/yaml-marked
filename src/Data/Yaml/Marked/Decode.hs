@@ -13,6 +13,7 @@ module Data.Yaml.Marked.Decode
 
 import Prelude
 
+import Control.Monad.IO.Class (MonadIO (..))
 import Control.Monad.Trans.Resource (MonadThrow, throwM)
 import Data.ByteString (ByteString)
 import Data.Yaml (ParseException (..))
@@ -28,57 +29,53 @@ decodeThrow
   => (Marked Value -> Either String a)
   -> ByteString
   -> m a
-decodeThrow p = either throwM pure . decodeEither' p
+decodeThrow p = either throwM pure . decodeEither p
 
 decodeAllThrow
   :: MonadThrow m
   => (Marked Value -> Either String a)
   -> ByteString
   -> m [a]
-decodeAllThrow p = either throwM pure . decodeAllEither' p
+decodeAllThrow p = either throwM pure . decodeAllEither p
 
 decodeFileEither
-  :: (Marked Value -> Either String a)
+  :: MonadIO m
+  => (Marked Value -> Either String a)
   -> FilePath
-  -> IO (Either ParseException a)
+  -> m (Either ParseException a)
 decodeFileEither p = fmap (fmap snd) . decodeFileWithWarnings p
 
 decodeAllFileEither
-  :: (Marked Value -> Either String a)
+  :: MonadIO m
+  => (Marked Value -> Either String a)
   -> FilePath
-  -> IO (Either ParseException [a])
+  -> m (Either ParseException [a])
 decodeAllFileEither p = fmap (fmap snd) . decodeAllFileWithWarnings p
 
 decodeFileWithWarnings
-  :: (Marked Value -> Either String a)
+  :: MonadIO m
+  => (Marked Value -> Either String a)
   -> FilePath
-  -> IO (Either ParseException ([Warning], a))
-decodeFileWithWarnings p = decodeHelper_ p . Y.decodeFileMarked
+  -> m (Either ParseException ([Warning], a))
+decodeFileWithWarnings p = liftIO . decodeHelper p . Y.decodeFileMarked
 
 decodeAllFileWithWarnings
-  :: (Marked Value -> Either String a)
+  :: MonadIO m
+  => (Marked Value -> Either String a)
   -> FilePath
-  -> IO (Either ParseException ([Warning], [a]))
-decodeAllFileWithWarnings p = decodeAllHelper_ p . Y.decodeFileMarked
+  -> m (Either ParseException ([Warning], [a]))
+decodeAllFileWithWarnings p = liftIO . decodeAllHelper p . Y.decodeFileMarked
 
-decodeEither'
+decodeEither
   :: (Marked Value -> Either String a)
   -> ByteString
   -> Either ParseException a
-decodeEither' p =
-  either Left (either (Left . AesonException) Right)
-    . unsafePerformIO
-    . fmap (fmap snd)
-    . decodeHelper p
-    . Y.decodeMarked
+decodeEither p =
+  fmap snd . unsafePerformIO . decodeHelper p . Y.decodeMarked
 
-decodeAllEither'
+decodeAllEither
   :: (Marked Value -> Either String a)
   -> ByteString
   -> Either ParseException [a]
-decodeAllEither' p =
-  either Left (either (Left . AesonException) Right)
-    . unsafePerformIO
-    . fmap (fmap snd)
-    . decodeAllHelper p
-    . Y.decodeMarked
+decodeAllEither p =
+  fmap snd . unsafePerformIO . decodeAllHelper p . Y.decodeMarked

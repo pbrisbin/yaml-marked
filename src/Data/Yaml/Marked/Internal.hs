@@ -1,29 +1,29 @@
 module Data.Yaml.Marked.Internal
   ( Warning (..)
   , decodeHelper
-  , decodeHelper_
   , decodeAllHelper
-  , decodeAllHelper_
   ) where
 
 import Prelude
 
+import Conduit
 import Control.Applicative ((<|>))
-import Control.Exception
-import Control.Monad.Reader
-import Control.Monad.State.Strict
-import Control.Monad.Trans.Resource (ResourceT, runResourceT)
+import Control.Monad (unless, when)
+import Control.Monad.Reader (MonadReader (..), asks)
+import Control.Monad.State (MonadState (..), gets, modify)
+import Control.Monad.Trans.RWS.Strict (RWST, evalRWST)
+import Control.Monad.Writer (MonadWriter (..), tell)
 import Data.Aeson.Key (fromText)
 import Data.Aeson.KeyMap (KeyMap)
 import qualified Data.Aeson.KeyMap as M
 import Data.Aeson.Types hiding (parse)
 import qualified Data.Attoparsec.Text as Atto
+import Data.Bifunctor (second)
 import Data.Bits (shiftL, (.|.))
 import Data.ByteString (ByteString)
 import Data.Char (isOctDigit, ord, toUpper)
-import Data.Conduit (ConduitM, runConduit, (.|))
-import qualified Data.Conduit.List as CL
-import Data.Foldable (traverse_)
+import Data.DList (DList)
+import Data.Foldable (toList, traverse_)
 import qualified Data.List as List
 import Data.Map (Map)
 import qualified Data.Map as Map
@@ -35,13 +35,13 @@ import qualified Data.Text as T
 import Data.Text.Encoding (decodeUtf8With)
 import Data.Text.Encoding.Error (lenientDecode)
 import qualified Data.Vector as V
-import Data.Void (Void)
 import Data.Yaml (ParseException (..))
 import Data.Yaml.Marked
 import Data.Yaml.Marked.Value hiding (Value (..))
 import qualified Data.Yaml.Marked.Value as Marked
 import Text.Libyaml hiding (decode, decodeFile, encode, encodeFile)
 import qualified Text.Libyaml as Y
+import UnliftIO.Exception
 
 type MarkedValue = Marked Marked.Value
 
@@ -53,48 +53,36 @@ markedValueFromEvent :: MarkedEvent -> a -> Marked a
 markedValueFromEvent e a = a <$ fromMarkedEvent e
 
 decodeHelper
-  :: (MarkedValue -> Either String a)
-  -> ConduitM () MarkedEvent Parse ()
-  -> IO (Either ParseException ([Warning], Either String a))
-decodeHelper parseMarked = mkHelper parse throwIO $ \(v, st) ->
-  Right (parseStateWarnings st, parseMarked v)
-
-decodeHelper_
-  :: (MarkedValue -> Either String a)
-  -> ConduitM () MarkedEvent Parse ()
-  -> IO (Either ParseException ([Warning], a))
-decodeHelper_ parseMarked = mkHelper parse catchLeft $ \(v, st) ->
+  :: MonadUnliftIO m
+  => (MarkedValue -> Either String a)
+  -> ConduitT () MarkedEvent Parse ()
+  -> m (Either ParseException ([Warning], a))
+decodeHelper parseMarked = mkHelper parse catchLeft $ \(v, ws) ->
   case parseMarked v of
     Left e -> Left $ AesonException e
-    Right x -> Right (parseStateWarnings st, x)
+    Right x -> Right (ws, x)
 
 decodeAllHelper
-  :: (MarkedValue -> Either String a)
-  -> ConduitM () MarkedEvent Parse ()
-  -> IO (Either ParseException ([Warning], Either String [a]))
-decodeAllHelper parseMarked = mkHelper parseAll throwIO $ \(vs, st) ->
-  Right (parseStateWarnings st, mapM parseMarked vs)
-
-decodeAllHelper_
-  :: (MarkedValue -> Either String a)
-  -> ConduitM () MarkedEvent Parse ()
-  -> IO (Either ParseException ([Warning], [a]))
-decodeAllHelper_ parseMarked = mkHelper parseAll catchLeft $ \(vs, st) ->
-  case mapM parseMarked vs of
+  :: MonadUnliftIO m
+  => (MarkedValue -> Either String a)
+  -> ConduitT () MarkedEvent Parse ()
+  -> m (Either ParseException ([Warning], [a]))
+decodeAllHelper parseMarked = mkHelper parseAll catchLeft $ \(v, ws) ->
+  case traverse parseMarked v of
     Left e -> Left $ AesonException e
-    Right xs -> Right (parseStateWarnings st, xs)
+    Right xs -> Right (ws, xs)
 
-parse :: ReaderT JSONPath (ConduitM MarkedEvent o Parse) MarkedValue
+parse :: ConduitT MarkedEvent o Parse MarkedValue
 parse = do
   docs <- parseAll
   case docs of
     [] -> pure $ markedZero Marked.Null
     [doc] -> pure doc
-    _ -> liftIO $ throwIO MultipleDocuments
+    _ -> throwIO MultipleDocuments
 
-parseAll :: ReaderT JSONPath (ConduitM MarkedEvent o Parse) [MarkedValue]
+parseAll :: ConduitT MarkedEvent o Parse [MarkedValue]
 parseAll = do
-  streamStart <- lift CL.head
+  streamStart <- headC
   case streamStart of
     Nothing ->
       -- empty string input
@@ -105,7 +93,7 @@ parseAll = do
     _ -> missed streamStart
  where
   parseDocs = do
-    documentStart <- lift CL.head
+    documentStart <- headC
     case documentStart of
       Just (MarkedEvent EventStreamEnd _ _) -> pure []
       Just (MarkedEvent EventDocumentStart _ _) -> do
@@ -113,76 +101,73 @@ parseAll = do
         requireEvent EventDocumentEnd
         (res :) <$> parseDocs
       _ -> missed documentStart
-  missed event = liftIO $ throwIO $ UnexpectedEvent (Y.yamlEvent <$> event) Nothing
+  missed event = throwIO $ UnexpectedEvent (Y.yamlEvent <$> event) Nothing
 
-catchLeft :: SomeException -> IO (Either ParseException a)
+catchLeft :: Applicative f => SomeException -> f (Either ParseException a)
 catchLeft = pure . Left . OtherParseException
 
 mkHelper
-  :: ReaderT JSONPath (ConduitM MarkedEvent Void Parse) val
+  :: MonadUnliftIO m
+  => ConduitT MarkedEvent Void Parse val
   -- ^ parse libyaml events as MarkedValue or [MarkedValue]
-  -> (SomeException -> IO (Either ParseException a))
+  -> (SomeException -> m (Either ParseException a))
   -- ^ what to do with unhandled exceptions
-  -> ((val, ParseState) -> Either ParseException a)
+  -> ((val, [Warning]) -> Either ParseException a)
   -- ^ further transform and parse results
-  -> ConduitM () MarkedEvent Parse ()
+  -> ConduitT () MarkedEvent Parse ()
   -- ^ the libyaml event (string/file) source
-  -> IO (Either ParseException a)
+  -> m (Either ParseException a)
 mkHelper eventParser onOtherExc extractResults src =
   catches
-    (extractResults <$> parseSrc eventParser src)
+    (extractResults <$> liftIO (runParse (src .| eventParser)))
     [ Handler $ \pe -> pure $ Left (pe :: ParseException)
     , Handler $ \ye -> pure $ Left $ InvalidYaml $ Just (ye :: YamlException)
     , Handler $ \sae -> throwIO (sae :: SomeAsyncException)
     , Handler onOtherExc
     ]
 
-data ParseState = ParseState
-  { parseStateAnchors :: Map String MarkedValue
-  , parseStateWarnings :: [Warning]
-  }
-
-type Parse = StateT ParseState (ResourceT IO)
-
-defineAnchor
-  :: MarkedValue -> String -> ReaderT JSONPath (ConduitM e o Parse) ()
-defineAnchor value name = modify (modifyAnchors $ Map.insert name value)
-
-modifyAnchors
-  :: (Map String MarkedValue -> Map String MarkedValue) -> ParseState -> ParseState
-modifyAnchors f st = st {parseStateAnchors = f (parseStateAnchors st)}
-
-lookupAnchor
-  :: String -> ReaderT JSONPath (ConduitM e o Parse) (Maybe MarkedValue)
-lookupAnchor name = gets (Map.lookup name . parseStateAnchors)
-
 newtype Warning = DuplicateKey JSONPath
   deriving stock (Eq, Show)
 
-addWarning :: Warning -> ReaderT JSONPath (ConduitM e o Parse) ()
-addWarning w = modify (modifyWarnings (w :))
- where
-  modifyWarnings :: ([Warning] -> [Warning]) -> ParseState -> ParseState
-  modifyWarnings f st = st {parseStateWarnings = f (parseStateWarnings st)}
+newtype ParseT m a = ParseT
+  { unParseT :: RWST JSONPath (DList Warning) (Map String MarkedValue) m a
+  }
+  deriving newtype
+    ( Functor
+    , Applicative
+    , Monad
+    , MonadIO
+    , MonadResource
+    , MonadReader JSONPath
+    , MonadWriter (DList Warning)
+    , MonadState (Map String MarkedValue)
+    )
 
-requireEvent :: Event -> ReaderT JSONPath (ConduitM MarkedEvent o Parse) ()
+runParseT :: Monad m => ParseT m a -> m (a, [Warning])
+runParseT p = second toList <$> evalRWST (unParseT p) [] Map.empty
+
+type Parse = ParseT (ResourceT IO)
+
+runParse :: ConduitT () Void Parse a -> IO (a, [Warning])
+runParse = runResourceT . runParseT . runConduit
+
+defineAnchor
+  :: MonadState (Map String MarkedValue) m
+  => MarkedValue
+  -> String
+  -> m ()
+defineAnchor value name = modify $ Map.insert name value
+
+lookupAnchor
+  :: MonadState (Map String MarkedValue) m
+  => String
+  -> m (Maybe MarkedValue)
+lookupAnchor = gets . Map.lookup
+
+requireEvent :: MonadIO m => Event -> ConduitT MarkedEvent o m ()
 requireEvent e = do
-  f <- lift $ fmap Y.yamlEvent <$> CL.head
-  unless (f == Just e) $
-    liftIO $
-      throwIO $
-        UnexpectedEvent f $
-          Just e
-
-parseSrc
-  :: ReaderT JSONPath (ConduitM MarkedEvent Void Parse) val
-  -> ConduitM () MarkedEvent Parse ()
-  -> IO (val, ParseState)
-parseSrc eventParser src =
-  runResourceT $
-    runStateT
-      (runConduit $ src .| runReaderT eventParser [])
-      (ParseState Map.empty [])
+  f <- fmap Y.yamlEvent <$> headC
+  unless (f == Just e) $ throwIO $ UnexpectedEvent f $ Just e
 
 parseScalar
   :: MarkedEvent
@@ -190,7 +175,7 @@ parseScalar
   -> Anchor
   -> Style
   -> Tag
-  -> ReaderT JSONPath (ConduitM MarkedEvent o Parse) Text
+  -> ConduitT MarkedEvent o Parse Text
 parseScalar e v a style tag = do
   let
     res = decodeUtf8With lenientDecode v
@@ -226,9 +211,9 @@ textToScientific = Atto.parseOnly (num <* Atto.endOfInput)
    where
     step a c = (a `shiftL` 3) .|. fromIntegral (ord c - 48)
 
-parseO :: ReaderT JSONPath (ConduitM MarkedEvent o Parse) MarkedValue
+parseO :: ConduitT MarkedEvent o Parse MarkedValue
 parseO = do
-  me <- lift CL.head
+  me <- headC
   case me of
     Just e@(MarkedEvent (EventScalar v tag style a) _ _) ->
       markedValueFromEvent e
@@ -241,21 +226,21 @@ parseO = do
     Just (MarkedEvent (EventAlias an) _ _) -> do
       m <- lookupAnchor an
       case m of
-        Nothing -> liftIO $ throwIO $ UnknownAlias an
+        Nothing -> throwIO $ UnknownAlias an
         Just v -> pure v
-    _ -> liftIO $ throwIO $ UnexpectedEvent (yamlEvent <$> me) Nothing
+    _ -> throwIO $ UnexpectedEvent (yamlEvent <$> me) Nothing
 
 parseS
   :: YamlMark
   -> Int
   -> Anchor
   -> ([MarkedValue] -> [MarkedValue])
-  -> ReaderT JSONPath (ConduitM MarkedEvent o Parse) MarkedValue
+  -> ConduitT MarkedEvent o Parse MarkedValue
 parseS startMark !n a front = do
-  me <- lift CL.peek
+  me <- peekC
   case me of
     Just (MarkedEvent EventSequenceEnd _ endMark) -> do
-      lift $ CL.drop 1
+      dropC 1
       let res =
             markedItem
               (Marked.Array $ V.fromList $ front [])
@@ -272,9 +257,9 @@ parseM
   -> Set Key
   -> Anchor
   -> KeyMap MarkedValue
-  -> ReaderT JSONPath (ConduitM MarkedEvent o Parse) MarkedValue
+  -> ConduitT MarkedEvent o Parse MarkedValue
 parseM startMark mergedKeys a front = do
-  me <- lift CL.head
+  me <- headC
   case me of
     Just (MarkedEvent EventMappingEnd _ endMark) -> do
       let res = markedItem (Marked.Object front) startMark endMark
@@ -287,19 +272,19 @@ parseM startMark mergedKeys a front = do
         Just (MarkedEvent (EventAlias an) _ _) -> do
           m <- lookupAnchor an
           case m of
-            Nothing -> liftIO $ throwIO $ UnknownAlias an
+            Nothing -> throwIO $ UnknownAlias an
             Just v | Marked.String t <- getMarkedItem v -> pure $ fromText t
-            Just v -> liftIO $ throwIO $ NonStringKeyAlias an $ markedValueToValue v
+            Just v -> throwIO $ NonStringKeyAlias an $ markedValueToValue v
         _ -> do
           path <- ask
-          liftIO $ throwIO $ NonStringKey path
+          throwIO $ NonStringKey path
 
       (mergedKeys', al') <- local (Key s :) $ do
         o <- parseO
         let al = do
               when (M.member s front && Set.notMember s mergedKeys) $ do
                 path <- asks reverse
-                addWarning (DuplicateKey path)
+                tell $ pure $ DuplicateKey path
               pure (Set.delete s mergedKeys, M.insert s o front)
         if s == "<<"
           then case getMarkedItem o of

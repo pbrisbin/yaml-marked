@@ -69,11 +69,14 @@ library
     , bytestring
     , conduit
     , containers
+    , dlist
     , libyaml
     , mtl
     , resourcet
     , scientific
     , text
+    , transformers
+    , unliftio
     , vector
     , yaml
   default-language: Haskell2010

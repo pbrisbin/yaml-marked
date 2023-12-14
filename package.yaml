@@ -71,11 +71,14 @@ library:
     - bytestring
     - conduit
     - containers
+    - dlist
     - libyaml
     - mtl
     - resourcet
     - scientific
     - text
+    - transformers
+    - unliftio
     - vector
     - yaml
 
