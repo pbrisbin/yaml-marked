@@ -12,11 +12,9 @@ import Prelude
 
 import Control.Applicative ((<|>))
 import Control.Exception
-import Control.Monad (unless, when)
 import Control.Monad.Reader
 import Control.Monad.State.Strict
 import Control.Monad.Trans.Resource (ResourceT, runResourceT)
-import Data.Aeson hiding (AesonException)
 import Data.Aeson.Key (fromText)
 import Data.Aeson.KeyMap (KeyMap)
 import qualified Data.Aeson.KeyMap as M
