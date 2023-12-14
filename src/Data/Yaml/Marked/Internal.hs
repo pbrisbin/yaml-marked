@@ -1,7 +1,5 @@
 module Data.Yaml.Marked.Internal
   ( Warning (..)
-  , parse
-  , Parse
   , decodeHelper
   , decodeHelper_
   , decodeAllHelper
@@ -54,42 +52,37 @@ fromMarkedEvent MarkedEvent {..} =
 markedValueFromEvent :: MarkedEvent -> a -> Marked a
 markedValueFromEvent e a = a <$ fromMarkedEvent e
 
-defineAnchor
-  :: MarkedValue -> String -> ReaderT JSONPath (ConduitM e o Parse) ()
-defineAnchor value name = modify (modifyAnchors $ Map.insert name value)
- where
-  modifyAnchors
-    :: (Map String MarkedValue -> Map String MarkedValue) -> ParseState -> ParseState
-  modifyAnchors f st = st {parseStateAnchors = f (parseStateAnchors st)}
+decodeHelper
+  :: (MarkedValue -> Either String a)
+  -> ConduitM () MarkedEvent Parse ()
+  -> IO (Either ParseException ([Warning], Either String a))
+decodeHelper parseMarked = mkHelper parse throwIO $ \(v, st) ->
+  Right (parseStateWarnings st, parseMarked v)
 
-lookupAnchor
-  :: String -> ReaderT JSONPath (ConduitM e o Parse) (Maybe MarkedValue)
-lookupAnchor name = gets (Map.lookup name . parseStateAnchors)
+decodeHelper_
+  :: (MarkedValue -> Either String a)
+  -> ConduitM () MarkedEvent Parse ()
+  -> IO (Either ParseException ([Warning], a))
+decodeHelper_ parseMarked = mkHelper parse catchLeft $ \(v, st) ->
+  case parseMarked v of
+    Left e -> Left $ AesonException e
+    Right x -> Right (parseStateWarnings st, x)
 
-newtype Warning = DuplicateKey JSONPath
-  deriving stock (Eq, Show)
+decodeAllHelper
+  :: (MarkedValue -> Either String a)
+  -> ConduitM () MarkedEvent Parse ()
+  -> IO (Either ParseException ([Warning], Either String [a]))
+decodeAllHelper parseMarked = mkHelper parseAll throwIO $ \(vs, st) ->
+  Right (parseStateWarnings st, mapM parseMarked vs)
 
-addWarning :: Warning -> ReaderT JSONPath (ConduitM e o Parse) ()
-addWarning w = modify (modifyWarnings (w :))
- where
-  modifyWarnings :: ([Warning] -> [Warning]) -> ParseState -> ParseState
-  modifyWarnings f st = st {parseStateWarnings = f (parseStateWarnings st)}
-
-data ParseState = ParseState
-  { parseStateAnchors :: Map String MarkedValue
-  , parseStateWarnings :: [Warning]
-  }
-
-type Parse = StateT ParseState (ResourceT IO)
-
-requireEvent :: Event -> ReaderT JSONPath (ConduitM MarkedEvent o Parse) ()
-requireEvent e = do
-  f <- lift $ fmap Y.yamlEvent <$> CL.head
-  unless (f == Just e) $
-    liftIO $
-      throwIO $
-        UnexpectedEvent f $
-          Just e
+decodeAllHelper_
+  :: (MarkedValue -> Either String a)
+  -> ConduitM () MarkedEvent Parse ()
+  -> IO (Either ParseException ([Warning], [a]))
+decodeAllHelper_ parseMarked = mkHelper parseAll catchLeft $ \(vs, st) ->
+  case mapM parseMarked vs of
+    Left e -> Left $ AesonException e
+    Right xs -> Right (parseStateWarnings st, xs)
 
 parse :: ReaderT JSONPath (ConduitM MarkedEvent o Parse) MarkedValue
 parse = do
@@ -121,6 +114,75 @@ parseAll = do
         (res :) <$> parseDocs
       _ -> missed documentStart
   missed event = liftIO $ throwIO $ UnexpectedEvent (Y.yamlEvent <$> event) Nothing
+
+catchLeft :: SomeException -> IO (Either ParseException a)
+catchLeft = pure . Left . OtherParseException
+
+mkHelper
+  :: ReaderT JSONPath (ConduitM MarkedEvent Void Parse) val
+  -- ^ parse libyaml events as MarkedValue or [MarkedValue]
+  -> (SomeException -> IO (Either ParseException a))
+  -- ^ what to do with unhandled exceptions
+  -> ((val, ParseState) -> Either ParseException a)
+  -- ^ further transform and parse results
+  -> ConduitM () MarkedEvent Parse ()
+  -- ^ the libyaml event (string/file) source
+  -> IO (Either ParseException a)
+mkHelper eventParser onOtherExc extractResults src =
+  catches
+    (extractResults <$> parseSrc eventParser src)
+    [ Handler $ \pe -> pure $ Left (pe :: ParseException)
+    , Handler $ \ye -> pure $ Left $ InvalidYaml $ Just (ye :: YamlException)
+    , Handler $ \sae -> throwIO (sae :: SomeAsyncException)
+    , Handler onOtherExc
+    ]
+
+data ParseState = ParseState
+  { parseStateAnchors :: Map String MarkedValue
+  , parseStateWarnings :: [Warning]
+  }
+
+type Parse = StateT ParseState (ResourceT IO)
+
+defineAnchor
+  :: MarkedValue -> String -> ReaderT JSONPath (ConduitM e o Parse) ()
+defineAnchor value name = modify (modifyAnchors $ Map.insert name value)
+
+modifyAnchors
+  :: (Map String MarkedValue -> Map String MarkedValue) -> ParseState -> ParseState
+modifyAnchors f st = st {parseStateAnchors = f (parseStateAnchors st)}
+
+lookupAnchor
+  :: String -> ReaderT JSONPath (ConduitM e o Parse) (Maybe MarkedValue)
+lookupAnchor name = gets (Map.lookup name . parseStateAnchors)
+
+newtype Warning = DuplicateKey JSONPath
+  deriving stock (Eq, Show)
+
+addWarning :: Warning -> ReaderT JSONPath (ConduitM e o Parse) ()
+addWarning w = modify (modifyWarnings (w :))
+ where
+  modifyWarnings :: ([Warning] -> [Warning]) -> ParseState -> ParseState
+  modifyWarnings f st = st {parseStateWarnings = f (parseStateWarnings st)}
+
+requireEvent :: Event -> ReaderT JSONPath (ConduitM MarkedEvent o Parse) ()
+requireEvent e = do
+  f <- lift $ fmap Y.yamlEvent <$> CL.head
+  unless (f == Just e) $
+    liftIO $
+      throwIO $
+        UnexpectedEvent f $
+          Just e
+
+parseSrc
+  :: ReaderT JSONPath (ConduitM MarkedEvent Void Parse) val
+  -> ConduitM () MarkedEvent Parse ()
+  -> IO (val, ParseState)
+parseSrc eventParser src =
+  runResourceT $
+    runStateT
+      (runConduit $ src .| runReaderT eventParser [])
+      (ParseState Map.empty [])
 
 parseScalar
   :: MarkedEvent
@@ -251,67 +313,3 @@ parseM startMark mergedKeys a front = do
   mergeObjects al _ = al
 
   merge xs = (Set.fromList (M.keys xs List.\\ M.keys front), M.union front xs)
-
-parseSrc
-  :: ReaderT JSONPath (ConduitM MarkedEvent Void Parse) val
-  -> ConduitM () MarkedEvent Parse ()
-  -> IO (val, ParseState)
-parseSrc eventParser src =
-  runResourceT $
-    runStateT
-      (runConduit $ src .| runReaderT eventParser [])
-      (ParseState Map.empty [])
-
-mkHelper
-  :: ReaderT JSONPath (ConduitM MarkedEvent Void Parse) val
-  -- ^ parse libyaml events as MarkedValue or [MarkedValue]
-  -> (SomeException -> IO (Either ParseException a))
-  -- ^ what to do with unhandled exceptions
-  -> ((val, ParseState) -> Either ParseException a)
-  -- ^ further transform and parse results
-  -> ConduitM () MarkedEvent Parse ()
-  -- ^ the libyaml event (string/file) source
-  -> IO (Either ParseException a)
-mkHelper eventParser onOtherExc extractResults src =
-  catches
-    (extractResults <$> parseSrc eventParser src)
-    [ Handler $ \pe -> pure $ Left (pe :: ParseException)
-    , Handler $ \ye -> pure $ Left $ InvalidYaml $ Just (ye :: YamlException)
-    , Handler $ \sae -> throwIO (sae :: SomeAsyncException)
-    , Handler onOtherExc
-    ]
-
-decodeHelper
-  :: (MarkedValue -> Either String a)
-  -> ConduitM () MarkedEvent Parse ()
-  -> IO (Either ParseException ([Warning], Either String a))
-decodeHelper parseMarked = mkHelper parse throwIO $ \(v, st) ->
-  Right (parseStateWarnings st, parseMarked v)
-
-decodeAllHelper
-  :: (MarkedValue -> Either String a)
-  -> ConduitM () MarkedEvent Parse ()
-  -> IO (Either ParseException ([Warning], Either String [a]))
-decodeAllHelper parseMarked = mkHelper parseAll throwIO $ \(vs, st) ->
-  Right (parseStateWarnings st, mapM parseMarked vs)
-
-catchLeft :: SomeException -> IO (Either ParseException a)
-catchLeft = pure . Left . OtherParseException
-
-decodeHelper_
-  :: (MarkedValue -> Either String a)
-  -> ConduitM () MarkedEvent Parse ()
-  -> IO (Either ParseException ([Warning], a))
-decodeHelper_ parseMarked = mkHelper parse catchLeft $ \(v, st) ->
-  case parseMarked v of
-    Left e -> Left $ AesonException e
-    Right x -> Right (parseStateWarnings st, x)
-
-decodeAllHelper_
-  :: (MarkedValue -> Either String a)
-  -> ConduitM () MarkedEvent Parse ()
-  -> IO (Either ParseException ([Warning], [a]))
-decodeAllHelper_ parseMarked = mkHelper parseAll catchLeft $ \(vs, st) ->
-  case mapM parseMarked vs of
-    Left e -> Left $ AesonException e
-    Right xs -> Right (parseStateWarnings st, xs)
