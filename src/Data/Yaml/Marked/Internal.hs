@@ -16,9 +16,10 @@ import Control.Monad.Writer (MonadWriter (..), tell)
 import Data.Aeson.Key (fromText)
 import Data.Aeson.KeyMap (KeyMap)
 import qualified Data.Aeson.KeyMap as M
-import Data.Aeson.Types hiding (parse)
+import Data.Aeson.Types
 import qualified Data.Attoparsec.Text as Atto
-import Data.Bifunctor (second)
+import Data.Bifunctor (first, second)
+import Data.Bitraversable (Bitraversable, bimapM)
 import Data.Bits (shiftL, (.|.))
 import Data.ByteString (ByteString)
 import Data.Char (isOctDigit, ord, toUpper)
@@ -56,24 +57,21 @@ decodeHelper
   :: MonadUnliftIO m
   => (MarkedValue -> Either String a)
   -> ConduitT () MarkedEvent Parse ()
-  -> m (Either ParseException ([Warning], a))
-decodeHelper parseMarked = mkHelper parse catchLeft $ \(v, ws) ->
-  case parseMarked v of
-    Left e -> Left $ AesonException e
-    Right x -> Right (ws, x)
+  -> m (Either ParseException (a, [Warning]))
+decodeHelper parseMarked =
+  mkHelper parseOne catchLeft $ first AesonException . firstM parseMarked
 
 decodeAllHelper
   :: MonadUnliftIO m
   => (MarkedValue -> Either String a)
   -> ConduitT () MarkedEvent Parse ()
-  -> m (Either ParseException ([Warning], [a]))
-decodeAllHelper parseMarked = mkHelper parseAll catchLeft $ \(v, ws) ->
-  case traverse parseMarked v of
-    Left e -> Left $ AesonException e
-    Right xs -> Right (ws, xs)
+  -> m (Either ParseException ([a], [Warning]))
+decodeAllHelper parseMarked =
+  mkHelper parseAll catchLeft $
+    first AesonException . firstM (traverse parseMarked)
 
-parse :: ConduitT MarkedEvent o Parse MarkedValue
-parse = do
+parseOne :: ConduitT MarkedEvent o Parse MarkedValue
+parseOne = do
   docs <- parseAll
   case docs of
     [] -> pure $ markedZero Marked.Null
@@ -298,3 +296,6 @@ parseM startMark mergedKeys a front = do
   mergeObjects al _ = al
 
   merge xs = (Set.fromList (M.keys xs List.\\ M.keys front), M.union front xs)
+
+firstM :: (Bitraversable t, Applicative f) => (a -> f a') -> t a b -> f (t a' b)
+firstM f = bimapM f pure

@@ -43,27 +43,27 @@ decodeFileEither
   => (Marked Value -> Either String a)
   -> FilePath
   -> m (Either ParseException a)
-decodeFileEither p = fmap (fmap snd) . decodeFileWithWarnings p
+decodeFileEither p = fmap (fmap fst) . decodeFileWithWarnings p
 
 decodeAllFileEither
   :: MonadIO m
   => (Marked Value -> Either String a)
   -> FilePath
   -> m (Either ParseException [a])
-decodeAllFileEither p = fmap (fmap snd) . decodeAllFileWithWarnings p
+decodeAllFileEither p = fmap (fmap fst) . decodeAllFileWithWarnings p
 
 decodeFileWithWarnings
   :: MonadIO m
   => (Marked Value -> Either String a)
   -> FilePath
-  -> m (Either ParseException ([Warning], a))
+  -> m (Either ParseException (a, [Warning]))
 decodeFileWithWarnings p = liftIO . decodeHelper p . Y.decodeFileMarked
 
 decodeAllFileWithWarnings
   :: MonadIO m
   => (Marked Value -> Either String a)
   -> FilePath
-  -> m (Either ParseException ([Warning], [a]))
+  -> m (Either ParseException ([a], [Warning]))
 decodeAllFileWithWarnings p = liftIO . decodeAllHelper p . Y.decodeFileMarked
 
 decodeEither
@@ -71,11 +71,11 @@ decodeEither
   -> ByteString
   -> Either ParseException a
 decodeEither p =
-  fmap snd . unsafePerformIO . decodeHelper p . Y.decodeMarked
+  fmap fst . unsafePerformIO . decodeHelper p . Y.decodeMarked
 
 decodeAllEither
   :: (Marked Value -> Either String a)
   -> ByteString
   -> Either ParseException [a]
 decodeAllEither p =
-  fmap snd . unsafePerformIO . decodeAllHelper p . Y.decodeMarked
+  fmap fst . unsafePerformIO . decodeAllHelper p . Y.decodeMarked
