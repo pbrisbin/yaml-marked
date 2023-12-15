@@ -1,26 +1,26 @@
-## yaml
+## yaml-marked
 
-[![GitHub build and test status](https://github.com/snoyberg/yaml/actions/workflows/tests.yml/badge.svg?branch=master)](https://github.com/snoyberg/yaml/actions/workflows/tests.yml)
-[![Appveyor build status](https://ci.appveyor.com/api/projects/status/hqy2jketp8m502so/branch/master?svg=true)](https://ci.appveyor.com/project/snoyberg/yaml/branch/master)
+[![Hackage](https://img.shields.io/hackage/v/yaml-marked.svg?style=flat)](https://hackage.haskell.org/package/yaml-marked)
+[![Stackage Nightly](http://stackage.org/package/yaml-marked/badge/nightly)](http://stackage.org/nightly/package/yaml-marked)
+[![Stackage LTS](http://stackage.org/package/yaml-marked/badge/lts)](http://stackage.org/lts/package/yaml-marked)
+[![CI](https://github.com/pbrisbin/yaml-marked/actions/workflows/ci.yml/badge.svg)](https://github.com/pbrisbin/yaml-marked/actions/workflows/ci.yml)
 
-Provides support for parsing and emitting Yaml documents.
+## Motivation
 
-`Data.Yaml` provides a high-level interface based around the JSON datatypes provided by the `aeson` package. It uses `Text.Libyaml` from `libyaml` in its implementation of the low-level yaml encoder/decoder.
+TODO
 
-### Examples
+## Example
 
-Usage examples can be found in the `Data.Yaml` documentation or in the [examples](https://github.com/snoyberg/yaml/tree/master/yaml/examples) directory.
-
-### Additional `yaml` modules
-
-* `Data.Yaml.Include` supports adding `!include` directives to your YAML files.
-* `Data.Yaml.Builder` and `Data.Yaml.Parser` allow more fine-grained control of parsing an rendering, as opposed to just using the aeson typeclass and datatype system for parsing and rendering.
-* `Data.Yaml.Aeson` is currently a re-export of `Data.Yaml` to explicitly choose to use the aeson-compatible API.
-
-### Executables
-
-Converters `json2yaml` and `yaml2json` can be built by disabling flag `no-exe`, e.g., one of:
+```hs
+-- TODO
 ```
-cabal install yaml -f-no-exe
-stack install yaml --flag yaml:-no-exe
+
+## Development & Tests
+
+```console
+stack build --fast --pedantic --test --file-watch
 ```
+
+---
+
+[LICENSE](./LICENSE) | [CHANGELOG](./CHANGELOG.md)
