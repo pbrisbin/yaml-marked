@@ -77,7 +77,7 @@ Instead of making a `FromJSON` instance, you just define a function. The
 
 ```haskell
 decodeStackYaml :: Marked Value -> Either String (Marked StackYaml)
-decodeStackYaml = withObject $ \o ->
+decodeStackYaml = withObject "StackYaml" $ \o ->
   StackYaml
     <$> (text =<< (o .: "resolver"))
     <*> (array text =<< (o .: "extra-deps"))

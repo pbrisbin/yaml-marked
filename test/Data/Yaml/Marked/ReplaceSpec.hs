@@ -88,7 +88,7 @@ spec = do
           , " - hackage-dep-1.0\n"
           ]
 
-      decodeExample = withObject $ \o ->
+      decodeExample = withObject "example" $ \o ->
         (,)
           <$> (text =<< (o .: "resolver"))
           <*> (array text =<< (o .: "extra-deps"))

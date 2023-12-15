@@ -11,49 +11,70 @@ import Prelude
 
 import Data.Aeson (Key)
 import qualified Data.Aeson.KeyMap as KeyMap
+import Data.Bifunctor (first)
 import Data.Foldable (toList)
 import Data.Text (Text)
 import Data.Yaml.Marked
 import Data.Yaml.Marked.Value
 
 withObject
-  :: (MarkedObject -> Either String a)
+  :: String
+  -> (MarkedObject -> Either String a)
   -> Marked Value
   -> Either String (Marked a)
-withObject f mv = case getMarkedItem mv of
+withObject label f mv = case getMarkedItem mv of
   Object hm -> do
     a <- f hm
     pure $ a <$ mv
-  _ -> Left "typeMismatch"
+  v -> prependContext label $ typeMismatch "Object" v
 
 withArray
-  :: (MarkedArray -> Either String a)
+  :: String
+  -> (MarkedArray -> Either String a)
   -> Marked Value
   -> Either String (Marked a)
-withArray f mv = case getMarkedItem mv of
+withArray label f mv = case getMarkedItem mv of
   Array v -> do
     a <- f v
     pure $ a <$ mv
-  _ -> Left "typeMismatch"
+  v -> prependContext label $ typeMismatch "Array" v
 
 withText
-  :: (Text -> Either String a)
+  :: String
+  -> (Text -> Either String a)
   -> Marked Value
   -> Either String (Marked a)
-withText f mv = case getMarkedItem mv of
+withText label f mv = case getMarkedItem mv of
   String t -> do
     a <- f t
     pure $ a <$ mv
-  _ -> Left "typeMismatch"
+  v -> prependContext label $ typeMismatch "String" v
+
+prependContext :: String -> Either String a -> Either String a
+prependContext label = first (prefix <>)
+ where
+  prefix = "parsing " <> label <> " failed, "
+
+typeMismatch :: String -> Value -> Either String a
+typeMismatch expected =
+  Left . (prefix <>) . \case
+    Object {} -> "Object"
+    Array {} -> "Array"
+    String {} -> "String"
+    Number {} -> "Number"
+    Bool {} -> "Bool"
+    Null -> "Null"
+ where
+  prefix = "expected " <> expected <> ", but encountered "
 
 (.:) :: MarkedObject -> Key -> Either String (Marked Value)
 (.:) km k = maybe (Left "Key not found") Right $ KeyMap.lookup k km
 
 text :: Marked Value -> Either String (Marked Text)
-text = withText pure
+text = withText "a text" pure
 
 array
   :: (Marked Value -> Either String (Marked a))
   -> Marked Value
   -> Either String (Marked [Marked a])
-array f = withArray $ traverse f . toList
+array f = withArray "an array" $ traverse f . toList
