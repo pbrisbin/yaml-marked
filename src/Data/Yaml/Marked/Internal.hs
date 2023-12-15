@@ -54,21 +54,18 @@ markedValueFromEvent :: MarkedEvent -> a -> Marked a
 markedValueFromEvent e a = a <$ fromMarkedEvent e
 
 decodeHelper
-  :: MonadUnliftIO m
+  :: MonadIO m
   => (MarkedValue -> Either String a)
   -> ConduitT () MarkedEvent Parse ()
   -> m (Either ParseException (a, [Warning]))
-decodeHelper parseMarked =
-  mkHelper parseOne catchLeft $ first AesonException . firstM parseMarked
+decodeHelper = mkHelper parseOne
 
 decodeAllHelper
-  :: MonadUnliftIO m
+  :: MonadIO m
   => (MarkedValue -> Either String a)
   -> ConduitT () MarkedEvent Parse ()
   -> m (Either ParseException ([a], [Warning]))
-decodeAllHelper parseMarked =
-  mkHelper parseAll catchLeft $
-    first AesonException . firstM (traverse parseMarked)
+decodeAllHelper parseMarked = mkHelper parseAll $ traverse parseMarked
 
 parseOne :: ConduitT MarkedEvent o Parse MarkedValue
 parseOne = do
@@ -79,49 +76,39 @@ parseOne = do
     _ -> throwIO MultipleDocuments
 
 parseAll :: ConduitT MarkedEvent o Parse [MarkedValue]
-parseAll = do
-  streamStart <- headC
-  case streamStart of
-    Nothing ->
-      -- empty string input
-      pure []
-    Just (MarkedEvent EventStreamStart _ _) ->
-      -- empty file input, comment only string/file input
-      parseDocs
-    _ -> missed streamStart
- where
-  parseDocs = do
-    documentStart <- headC
-    case documentStart of
-      Just (MarkedEvent EventStreamEnd _ _) -> pure []
-      Just (MarkedEvent EventDocumentStart _ _) -> do
-        res <- parseO
-        requireEvent EventDocumentEnd
-        (res :) <$> parseDocs
-      _ -> missed documentStart
-  missed event = throwIO $ UnexpectedEvent (Y.yamlEvent <$> event) Nothing
+parseAll =
+  headC >>= \case
+    Nothing -> pure []
+    Just (MarkedEvent EventStreamStart _ _) -> parseDocs
+    x -> missed x
 
-catchLeft :: Applicative f => SomeException -> f (Either ParseException a)
-catchLeft = pure . Left . OtherParseException
+parseDocs :: ConduitT MarkedEvent o Parse [MarkedValue]
+parseDocs =
+  headC >>= \case
+    Just (MarkedEvent EventStreamEnd _ _) -> pure []
+    Just (MarkedEvent EventDocumentStart _ _) -> do
+      res <- parseO
+      requireEvent EventDocumentEnd
+      (res :) <$> parseDocs
+    x -> missed x
+
+missed :: MonadIO m => Maybe MarkedEvent -> m a
+missed event = throwIO $ UnexpectedEvent (Y.yamlEvent <$> event) Nothing
 
 mkHelper
-  :: MonadUnliftIO m
+  :: MonadIO m
   => ConduitT MarkedEvent Void Parse val
-  -- ^ parse libyaml events as MarkedValue or [MarkedValue]
-  -> (SomeException -> m (Either ParseException a))
-  -- ^ what to do with unhandled exceptions
-  -> ((val, [Warning]) -> Either ParseException a)
-  -- ^ further transform and parse results
+  -> (val -> Either String a)
   -> ConduitT () MarkedEvent Parse ()
-  -- ^ the libyaml event (string/file) source
-  -> m (Either ParseException a)
-mkHelper eventParser onOtherExc extractResults src =
-  catches
-    (extractResults <$> liftIO (runParse (src .| eventParser)))
+  -> m (Either ParseException (a, [Warning]))
+mkHelper eventParser f src = liftIO $ catches go handlers
+ where
+  go = first AesonException . firstM f <$> runParse (src .| eventParser)
+  handlers =
     [ Handler $ \pe -> pure $ Left (pe :: ParseException)
     , Handler $ \ye -> pure $ Left $ InvalidYaml $ Just (ye :: YamlException)
-    , Handler $ \sae -> throwIO (sae :: SomeAsyncException)
-    , Handler onOtherExc
+    , Handler $ \ex -> throwIO @_ @SomeAsyncException ex
+    , Handler $ \ex -> pure $ Left $ OtherParseException ex
     ]
 
 newtype Warning = DuplicateKey JSONPath
