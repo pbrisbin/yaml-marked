@@ -59,7 +59,7 @@ import Data.Yaml.Marked.Replace
 
 ### Decoding
 
-Decoding is mean to look a lot like aeson. Your record should hold `Marked`
+Decoding is meant to look a lot like aeson. Your record should hold `Marked`
 values anywhere you will need that:
 
 ```haskell
@@ -80,7 +80,8 @@ decodeStackYaml = withObject $ \o ->
     <*> (array text =<< (o .: "extra-deps"))
 ```
 
-Then we can give this to `Data.Yaml.Marked.Decode.decodeThrow`:
+Then we can give this and some source Yaml to
+`Data.Yaml.Marked.Decode.decodeThrow` and get back a `Marked StackYaml`:
 
 ```haskell
 example :: IO ()
@@ -100,13 +101,13 @@ example = do
 Because our decoder returns a `Marked StackYaml`, that's what we get. We don't
 need the location info for this (it just represents the entire file), so we
 discard it here. We could've written our decoder to return just a `StackYaml`,
-but then we could not have used `withObject`, which needs to return `Marked` in
+but then we could not have used `withObject`, which always returns `Marked` in
 case it's being used somewhere other than the top-level document, where you
 would indeed want `Marked` values.
 
 Next, let's pretend we linted this value and discovered the resolver and the
-second extra-dep can be updated. As part of doing this we can build a `Replace`
-value from the `Marked` item and what it should be updated to.
+second extra-dep can be updated. As part of doing this, we would presumably
+build `Replace` values from the `Marked` items we linted:
 
 ```haskell
   let replaces =
@@ -115,7 +116,7 @@ value from the `Marked` item and what it should be updated to.
         ]
 ```
 
-Then we can just runs these on the original `ByteString`:
+Then we can runs all of those on the original `ByteString`:
 
 ```haskell
   BS8.putStr =<< runReplaces replaces stackYaml
