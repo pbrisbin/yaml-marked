@@ -26,7 +26,7 @@ data Marked a = Marked
   , _markedStart :: YamlMark
   , _markedEnd :: YamlMark
   }
-  deriving stock (Functor)
+  deriving stock (Functor, Foldable, Traversable)
 
 -- by-hand required because YamlMark lacks Eq
 instance Eq a => Eq (Marked a) where

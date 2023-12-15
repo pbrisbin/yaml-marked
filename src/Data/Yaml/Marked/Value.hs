@@ -2,8 +2,8 @@ module Data.Yaml.Marked.Value
   ( Value (..)
   , MarkedObject
   , MarkedArray
-  , markedValueToValue
-  , markedValueAsJSON
+  , valueAsJSON
+  , valueToValue
   ) where
 
 import Prelude
@@ -30,16 +30,16 @@ type MarkedObject = KeyMap (Marked Value)
 
 type MarkedArray = Vector (Marked Value)
 
-markedValueToValue :: Marked Value -> Aeson.Value
-markedValueToValue = go . getMarkedItem
- where
-  go = \case
-    Object km -> Aeson.Object $ markedValueToValue <$> km
-    Array v -> Aeson.Array $ markedValueToValue <$> v
-    String x -> Aeson.String x
-    Number x -> Aeson.Number x
-    Bool x -> Aeson.Bool x
-    Null -> Aeson.Null
+-- | Parse the value using its 'FromJSON', discarding any marks
+valueAsJSON :: FromJSON a => Value -> Either String a
+valueAsJSON = parseEither parseJSON . valueToValue
 
-markedValueAsJSON :: FromJSON a => Marked Value -> Either String a
-markedValueAsJSON = parseEither parseJSON . markedValueToValue
+-- | Convert a 'Value' to an equivalent 'Data.Aeson.Value'
+valueToValue :: Value -> Aeson.Value
+valueToValue = \case
+  Object km -> Aeson.Object $ valueToValue . getMarkedItem <$> km
+  Array v -> Aeson.Array $ valueToValue . getMarkedItem <$> v
+  String x -> Aeson.String x
+  Number x -> Aeson.Number x
+  Bool x -> Aeson.Bool x
+  Null -> Aeson.Null

@@ -38,7 +38,6 @@ import Data.Text.Encoding.Error (lenientDecode)
 import qualified Data.Vector as V
 import Data.Yaml (ParseException (..))
 import Data.Yaml.Marked
-import Data.Yaml.Marked.Value hiding (Value (..))
 import qualified Data.Yaml.Marked.Value as Marked
 import Text.Libyaml hiding (decode, decodeFile, encode, encodeFile)
 import qualified Text.Libyaml as Y
@@ -259,7 +258,11 @@ parseM startMark mergedKeys a front = do
           case m of
             Nothing -> throwIO $ UnknownAlias an
             Just v | Marked.String t <- getMarkedItem v -> pure $ fromText t
-            Just v -> throwIO $ NonStringKeyAlias an $ markedValueToValue v
+            Just v ->
+              throwIO $
+                NonStringKeyAlias an $
+                  Marked.valueToValue $
+                    getMarkedItem v
         _ -> do
           path <- ask
           throwIO $ NonStringKey path
