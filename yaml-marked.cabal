@@ -31,6 +31,7 @@ library
       Data.Yaml.Marked.Decode
       Data.Yaml.Marked.Internal
       Data.Yaml.Marked.Parse
+      Data.Yaml.Marked.Replace
       Data.Yaml.Marked.Value
   other-modules:
       Paths_yaml_marked
@@ -90,6 +91,7 @@ test-suite spec
   main-is: Spec.hs
   other-modules:
       Data.Yaml.Marked.DecodeSpec
+      Data.Yaml.Marked.ReplaceSpec
       Paths_yaml_marked
   hs-source-dirs:
       test
