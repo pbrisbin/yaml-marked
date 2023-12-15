@@ -35,27 +35,40 @@ applying replacements to `ByteString`s (`Data.Yaml.Marked.Replace`), and I can
 finally do what I need to:
 
 ```hs
+-- Kind of like you'd do a record for FromJSON, except with Marked wrapping
+-- wherever you need it. Notice the extraDeps list itself is Marked, as is each
+-- element.
+data StackYaml = StackYaml
+  { resolver :: Marked Text
+  , extraDeps :: Marked [Marked Text]
+  }
+
+-- Data.Yaml.Marked.Parse exposes Aeson-inspired functions for building a
+-- decoding function
+decodeStackYaml :: Marked Value -> Either String (Marked StackYaml)
+decodeStackYaml = withObject "StackYaml" $ \o ->
+  StackYaml
+    <$> (text =<< (o .: "resolver"))
+    <*> (array text =<< (o .: "extra-deps"))
+
 main :: IO ()
 main = do
-  let
-    -- Using functions from Data.Yaml.Marked.Parse
-    decodeStackYaml = withObject $ \o ->
-      (,)
-        <$> (text =<< (o .: "resolver"))
-        <*> (array text =<< (o .: "extra-deps"))
-
   stackYaml <- BS8.readFile "stack.yaml"
-  -- resolver: lts-20.0
-  -- extra-deps:
-  --  - ../local-package
-  --  - hackage-dep-1.0
+  -- Imagine:
+  --
+  --   resolver: lts-20.0
+  --   extra-deps:
+  --    - ../local-package
+  --    - hackage-dep-1.0
+  --
 
-  (resolver, extraDeps) <-
-    -- Data.Yaml.Marked.Decode
-    getMarkedItem <$> decodeThrow decodeStackYaml stackYaml
+  -- We don't need the location values that represent the entire file, so we can
+  -- discard them here.
+  StackYaml {..} <- getMarkedItem <$> decodeThrow decodeStackYaml stackYaml
 
   let replaces =
-        -- Data.Yaml.Marked.Replace
+        -- Pretend we identified the resolver and second extra-dep as old and
+        -- built Replace values for each in the process of doing so.
         [ replaceMarked resolver "lts-20.11"
         , replaceMarked (getMarkedItem extraDeps !! 1) "hackage-dep-2.0.1"
         ]
