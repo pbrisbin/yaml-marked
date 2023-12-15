@@ -90,3 +90,12 @@ tests:
     dependencies:
       - hspec
       - yaml-marked
+
+  readme:
+    main: README.lhs
+    ghc-options: -pgmL markdown-unlit
+    dependencies:
+      - bytestring
+      - markdown-unlit
+      - text
+      - yaml-marked
