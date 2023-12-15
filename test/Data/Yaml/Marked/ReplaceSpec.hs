@@ -25,29 +25,39 @@ decodeStackYaml = withObject $ \o ->
 
 spec :: Spec
 spec = do
-  it "makes multiple replacements that change size" $ do
-    let exampleYaml =
-          mconcat
-            [ "resolver: lts-20.0\n"
-            , "extra-deps:\n"
-            , " - ../local-package\n"
-            , " - hackage-dep-1.0\n"
+  describe "newReplace" $ pure ()
+  -- TODO: it validates for InvalidMarked
+
+  describe "newReplaces" $ pure ()
+  -- TODO: it validates for OverlappingReplaces
+
+  describe "runReplaces" $ do
+    it "makes multiple replacements that change size" $ do
+      let exampleYaml =
+            mconcat
+              [ "resolver: lts-20.0\n"
+              , "extra-deps:\n"
+              , " - ../local-package\n"
+              , " - hackage-dep-1.0\n"
+              ]
+
+      stackYaml <- decodeThrow decodeStackYaml exampleYaml
+
+      let
+        mResolver = resolver $ getMarkedItem stackYaml
+        mExtraDep = getMarkedItem (extraDeps $ getMarkedItem stackYaml) !! 1
+
+      replaces <-
+        newReplaces
+          =<< sequenceA
+            [ newReplace mResolver "lts-20.11"
+            , newReplace mExtraDep "hackage-dep-2.0.1"
             ]
 
-    stackYaml <- decodeThrow decodeStackYaml exampleYaml
-
-    let
-      mResolver = resolver $ getMarkedItem stackYaml
-      mExtraDep = getMarkedItem (extraDeps $ getMarkedItem stackYaml) !! 1
-      replaces =
-        [ newReplace mResolver "lts-20.11"
-        , newReplace mExtraDep "hackage-dep-2.0.1"
-        ]
-
-    runReplaces replaces exampleYaml
-      `shouldBe` mconcat
-        [ "resolver: lts-20.11\n"
-        , "extra-deps:\n"
-        , " - ../local-package\n"
-        , " - hackage-dep-2.0.1\n"
-        ]
+      runReplaces replaces exampleYaml
+        `shouldBe` mconcat
+          [ "resolver: lts-20.11\n"
+          , "extra-deps:\n"
+          , " - ../local-package\n"
+          , " - hackage-dep-2.0.1\n"
+          ]
