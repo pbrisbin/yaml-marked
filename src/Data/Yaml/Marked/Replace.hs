@@ -1,6 +1,7 @@
 module Data.Yaml.Marked.Replace
   ( Replace
   , newReplace
+  , replaceMarked
   , ReplaceException (..)
   , runReplaces
   ) where
@@ -23,11 +24,18 @@ data Replace = Replace
   }
   deriving stock (Eq, Show)
 
-newReplace :: Marked a -> ByteString -> Replace
-newReplace m = Replace si (ei - si)
- where
-  si = getMarkedStartIndex m
-  ei = getMarkedEndIndex m
+-- | Create a 'Replace' directly at given index and length
+newReplace :: Int -> Int -> ByteString -> Replace
+newReplace idx len bs =
+  Replace
+    { replaceIndex = idx
+    , replacedLength = len
+    , replacedBy = bs
+    }
+
+-- | Create a 'Replace' for something 'Marked'
+replaceMarked :: Marked a -> ByteString -> Replace
+replaceMarked m = newReplace (getMarkedStartIndex m) (getMarkedLength m)
 
 data ReplaceException
   = NegativeStartIndex Replace
@@ -66,14 +74,27 @@ runReplaces = go 0 "" . sortOn replaceIndex
       rs
       after
 
+-- | Break a 'ByteString' into the content before/after a replacement
+--
+-- Will throw 'ReplaceException' if the 'Replace' is not valid for the given
+-- input.
 breakAtOffsetReplace
-  :: MonadThrow m => Int -> Replace -> ByteString -> m (ByteString, ByteString)
+  :: MonadThrow m
+  => Int
+  -- ^ An amount to shift the 'replaceIndex' by
+  --
+  -- Since this function is called recursively on an overall 'ByteString',
+  -- within which the 'replaceIndex' is relative to, we need to track how much
+  -- to shift it as we recur.
+  -> Replace
+  -> ByteString
+  -> m (ByteString, ByteString)
 breakAtOffsetReplace offset r bs = do
   when (sIdx < 0) $
     throwM $
-      -- A negative index post-recursion means a later replacement has landed
-      -- within something we already replaced. Otherwise, it was just negative
-      -- to begin with (e.g. out-of-bounds)
+      -- A negative index post-recursion (offset != 0) means a later replacement
+      -- has landed within something we already replaced. Otherwise, it was just
+      -- negative to begin with (e.g. out-of-bounds)
       if offset == 0
         then NegativeStartIndex r
         else OverlappingReplace r

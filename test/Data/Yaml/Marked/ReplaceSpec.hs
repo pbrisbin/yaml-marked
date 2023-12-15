@@ -4,102 +4,107 @@ module Data.Yaml.Marked.ReplaceSpec
 
 import Prelude
 
-import Data.Text (Text)
 import Data.Yaml.Marked
 import Data.Yaml.Marked.Decode
 import Data.Yaml.Marked.Parse
 import Data.Yaml.Marked.Replace
-import Data.Yaml.Marked.Value
 import Test.Hspec
-
-data StackYaml = StackYaml
-  { resolver :: Marked Text
-  , extraDeps :: Marked [Marked Text]
-  }
-
-decodeStackYaml :: Marked Value -> Either String (Marked StackYaml)
-decodeStackYaml = withObject $ \o ->
-  StackYaml
-    <$> (text =<< (o .: "resolver"))
-    <*> (array text =<< (o .: "extra-deps"))
 
 spec :: Spec
 spec = do
   describe "runReplaces" $ do
-    it "makes multiple replacements that change size" $ do
-      let exampleYaml =
-            mconcat
-              [ "resolver: lts-20.0\n"
-              , "extra-deps:\n"
-              , " - ../local-package\n"
-              , " - hackage-dep-1.0\n"
-              ]
+    it "works for a replacement at start" $ do
+      let r = newReplace 0 4 "that"
+      runReplaces [r] "this text" `shouldReturn` "that text"
 
-      stackYaml <- decodeThrow decodeStackYaml exampleYaml
+    it "works for replacement at start and end" $ do
+      let rs =
+            [ newReplace 0 4 "that"
+            , newReplace 13 3 "cold"
+            ]
 
-      let
-        mResolver = resolver $ getMarkedItem stackYaml
-        mExtraDep = getMarkedItem (extraDeps $ getMarkedItem stackYaml) !! 1
-        replaces =
-          [ newReplace mResolver "lts-20.11"
-          , newReplace mExtraDep "hackage-dep-2.0.1"
-          ]
+      runReplaces rs "this text is hot" `shouldReturn` "that text is cold"
 
-      runReplaces replaces exampleYaml
-        `shouldReturn` mconcat
-          [ "resolver: lts-20.11\n"
+    it "works for replacement at start, middle, and end" $ do
+      let rs =
+            [ newReplace 0 4 "that"
+            , newReplace 18 3 "cold"
+            , newReplace 10 4 "won't"
+            ]
+
+      runReplaces rs "this text will be hot"
+        `shouldReturn` "that text won't be cold"
+
+    context "validations" $ do
+      it "NegativeStartIndex" $ do
+        let r = newReplace (negate 1) 0 ""
+        runReplaces [r] "" `shouldThrow` (== NegativeStartIndex r)
+
+      it "NegativeLength" $ do
+        let r = newReplace 0 (negate 1) ""
+        runReplaces [r] "" `shouldThrow` (== NegativeLength r)
+
+      it "ReplaceOutOfBounds" $ do
+        let r = newReplace 0 3 ""
+        runReplaces [r] "x" `shouldThrow` (== ReplaceOutOfBounds r 1)
+
+      it "ReplaceOutOfBounds by start" $ do
+        let r = newReplace 3 3 ""
+        runReplaces [r] "x" `shouldThrow` (== ReplaceOutOfBounds r 1)
+
+      it "ReplaceOutOfBounds with multiple" $ do
+        let
+          r = newReplace 7 3 ""
+          rs =
+            [ newReplace 0 2 ""
+            , newReplace 3 3 ""
+            , r
+            ]
+
+        runReplaces rs "123456" `shouldThrow` (== ReplaceOutOfBounds r 0)
+
+      it "OverlappingReplace" $ do
+        let
+          overlapped = newReplace 2 3 ""
+          overlapping = newReplace 3 3 ""
+          rs =
+            [ newReplace 0 1 ""
+            , overlapping
+            , newReplace 9 1 ""
+            , overlapped
+            , newReplace 12 1 ""
+            ]
+
+        runReplaces rs "123456789abcdefhigjkl"
+          `shouldThrow` (== OverlappingReplace overlapping)
+
+  it "works for a realistic stack.yaml example" $ do
+    let
+      exampleYaml =
+        mconcat
+          [ "resolver: lts-20.0\n"
           , "extra-deps:\n"
           , " - ../local-package\n"
-          , " - hackage-dep-2.0.1\n"
+          , " - hackage-dep-1.0\n"
           ]
 
-  context "validations" $ do
-    let
-      someMarked :: Int -> Int -> Marked Text
-      someMarked a b =
-        markedItem "this text" (YamlMark a 0 0) (YamlMark b 0 0)
+      decodeExample = withObject $ \o ->
+        (,)
+          <$> (text =<< (o .: "resolver"))
+          <*> (array text =<< (o .: "extra-deps"))
 
-      someReplaceAt :: Int -> Int -> Replace
-      someReplaceAt a b = newReplace (someMarked a b) "that text"
+    (resolver, extraDeps) <-
+      getMarkedItem <$> decodeThrow decodeExample exampleYaml
 
-    it "NegativeStartIndex" $ do
-      let r = someReplaceAt (negate 1) 0
-      runReplaces [r] "" `shouldThrow` (== NegativeStartIndex r)
-
-    it "NegativeLength" $ do
-      let r = someReplaceAt 0 (negate 1)
-      runReplaces [r] "" `shouldThrow` (== NegativeLength r)
-
-    it "ReplaceOutOfBounds" $ do
-      let r = someReplaceAt 0 2
-      runReplaces [r] "x" `shouldThrow` (== ReplaceOutOfBounds r 1)
-
-    it "ReplaceOutOfBounds by start" $ do
-      let r = someReplaceAt 3 5
-      runReplaces [r] "x" `shouldThrow` (== ReplaceOutOfBounds r 1)
-
-    it "ReplaceOutOfBounds with multiple" $ do
-      let
-        r = someReplaceAt 7 9
-        rs =
-          [ someReplaceAt 0 1
-          , someReplaceAt 3 5
-          , r
+    let replaces =
+          [ replaceMarked resolver "lts-20.11"
+          , replaceMarked (getMarkedItem extraDeps !! 1) "hackage-dep-2.0.1"
           ]
 
-      runReplaces rs "123456" `shouldThrow` (== ReplaceOutOfBounds r 1)
-
-    it "OverlappingReplace" $ do
-      let
-        overlapped = someReplaceAt 2 4
-        overlapping = someReplaceAt 3 5
-        rs =
-          [ someReplaceAt 0 2
-          , overlapping
-          , someReplaceAt 9 10
-          , overlapped
-          , someReplaceAt 12 13
-          ]
-
-      runReplaces rs "123456789abcdefhigjkl"
-        `shouldThrow` (== OverlappingReplace overlapping)
+    runReplaces replaces exampleYaml
+      `shouldReturn` mconcat
+        [ "resolver: lts-20.11\n"
+        , "extra-deps:\n"
+        , " - ../local-package\n"
+        , " - hackage-dep-2.0.1\n"
+        ]

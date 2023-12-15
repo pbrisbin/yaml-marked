@@ -3,10 +3,16 @@ module Data.Yaml.Marked
   , markedZero
   , markedItem
   , getMarkedItem
+  , getMarkedLength
+  , getMarkedIndexes
   , getMarkedStart
   , getMarkedStartIndex
+  , getMarkedStartLine
+  , getMarkedStartColumn
   , getMarkedEnd
   , getMarkedEndIndex
+  , getMarkedEndLine
+  , getMarkedEndColumn
   , YamlMark (..)
   ) where
 
@@ -48,17 +54,35 @@ markedItem a s e =
 getMarkedItem :: Marked a -> a
 getMarkedItem = _markedItem
 
+getMarkedIndexes :: Marked a -> (Int, Int)
+getMarkedIndexes = (,) <$> getMarkedStartIndex <*> getMarkedEndIndex
+
+getMarkedLength :: Marked a -> Int
+getMarkedLength = uncurry subtract . getMarkedIndexes
+
 getMarkedStart :: Marked a -> YamlMark
 getMarkedStart = _markedStart
 
 getMarkedStartIndex :: Marked a -> Int
 getMarkedStartIndex = yamlIndex . getMarkedStart
 
+getMarkedStartLine :: Marked a -> Int
+getMarkedStartLine = yamlLine . getMarkedStart
+
+getMarkedStartColumn :: Marked a -> Int
+getMarkedStartColumn = yamlColumn . getMarkedStart
+
 getMarkedEnd :: Marked a -> YamlMark
 getMarkedEnd = _markedEnd
 
 getMarkedEndIndex :: Marked a -> Int
 getMarkedEndIndex = yamlIndex . getMarkedEnd
+
+getMarkedEndLine :: Marked a -> Int
+getMarkedEndLine = yamlLine . getMarkedEnd
+
+getMarkedEndColumn :: Marked a -> Int
+getMarkedEndColumn = yamlColumn . getMarkedEnd
 
 zeroYamlMark :: YamlMark
 zeroYamlMark = YamlMark 0 0 0
