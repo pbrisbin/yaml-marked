@@ -55,4 +55,6 @@ spec = do
           getMarkedStartColumn extraDep1 `shouldBe` 3
           getMarkedEndLine extraDep1 `shouldBe` 3
           getMarkedEndColumn extraDep1 `shouldBe` 18
-        _ -> expectationFailure ""
+        eds ->
+          expectationFailure $
+            "Expected to parse 2 extra-deps, got " <> show eds

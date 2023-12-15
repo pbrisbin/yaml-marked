@@ -67,12 +67,8 @@ runReplaces = go 0 "" . sortOn replaceIndex
   go _ acc [] bs = pure $ acc <> bs
   go offset acc (r : rs) bs = do
     (before, after) <- breakAtOffsetReplace offset r bs
-
-    go
-      (offset + BS8.length before + replacedLength r)
-      (acc <> before <> replacedBy r)
-      rs
-      after
+    let newOffset = offset + BS8.length before + replacedLength r
+    go newOffset (acc <> before <> replacedBy r) rs after
 
 -- | Break a 'ByteString' into the content before/after a replacement
 --
@@ -83,9 +79,9 @@ breakAtOffsetReplace
   => Int
   -- ^ An amount to shift the 'replaceIndex' by
   --
-  -- Since this function is called recursively on an overall 'ByteString',
-  -- within which the 'replaceIndex' is relative to, we need to track how much
-  -- to shift it as we recur.
+  -- Since this function is called recursively to incrementally replace within
+  -- an overall 'ByteString', to which the 'replaceIndex' is relative, we need
+  -- to track how much to shift it as we recur.
   -> Replace
   -> ByteString
   -> m (ByteString, ByteString)
@@ -94,14 +90,13 @@ breakAtOffsetReplace offset r bs = do
     throwM $
       -- A negative index post-recursion (offset != 0) means a later replacement
       -- has landed within something we already replaced. Otherwise, it was just
-      -- negative to begin with (e.g. out-of-bounds)
+      -- negative to begin with.
       if offset == 0
         then NegativeStartIndex r
         else OverlappingReplace r
 
   when (rLen < 0) $ throwM $ NegativeLength r
   when (rLen > bLen) $ throwM $ ReplaceOutOfBounds r bLen
-
   pure $ second (BS8.drop rLen) $ BS8.splitAt sIdx bs
  where
   sIdx = replaceIndex r - offset
