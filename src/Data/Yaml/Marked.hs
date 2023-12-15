@@ -4,8 +4,9 @@ module Data.Yaml.Marked
   , markedItem
   , getMarkedItem
   , getMarkedStart
+  , getMarkedStartIndex
   , getMarkedEnd
-  , zeroYamlMark
+  , getMarkedEndIndex
   ) where
 
 import Prelude
@@ -49,8 +50,14 @@ getMarkedItem = _markedItem
 getMarkedStart :: Marked a -> YamlMark
 getMarkedStart = _markedStart
 
+getMarkedStartIndex :: Marked a -> Int
+getMarkedStartIndex = yamlIndex . getMarkedStart
+
 getMarkedEnd :: Marked a -> YamlMark
 getMarkedEnd = _markedEnd
+
+getMarkedEndIndex :: Marked a -> Int
+getMarkedEndIndex = yamlIndex . getMarkedEnd
 
 zeroYamlMark :: YamlMark
 zeroYamlMark = YamlMark 0 0 0
