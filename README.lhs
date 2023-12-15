@@ -5,6 +5,9 @@
 [![Stackage LTS](http://stackage.org/package/yaml-marked/badge/lts)](http://stackage.org/lts/package/yaml-marked)
 [![CI](https://github.com/pbrisbin/yaml-marked/actions/workflows/ci.yml/badge.svg)](https://github.com/pbrisbin/yaml-marked/actions/workflows/ci.yml)
 
+Like `Data.Yaml` but for when you need the source locations (aka `YamlMark`s)
+for parsed elements.
+
 ## Motivation
 
 While working on [`stack-lint-extra-deps`][sled], it became apparent it would be
