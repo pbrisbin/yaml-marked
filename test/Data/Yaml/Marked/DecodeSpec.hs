@@ -12,7 +12,6 @@ import Data.Yaml.Marked.Decode
 import Data.Yaml.Marked.Parse
 import Data.Yaml.Marked.Value
 import Test.Hspec
-import Text.Libyaml (YamlMark (..))
 
 data StackYaml = StackYaml
   { resolver :: Marked Text
@@ -30,14 +29,13 @@ spec :: Spec
 spec = do
   describe "decodeThrow" $ do
     it "decodes with marks" $ do
-      let
-        exampleYaml =
-          mconcat
-            [ "resolver: lts-20.11\n"
-            , "extra-deps:\n"
-            , " - ../local-package\n"
-            , " - hackage-dep-1.0\n"
-            ]
+      let exampleYaml =
+            mconcat
+              [ "resolver: lts-20.11\n"
+              , "extra-deps:\n"
+              , " - ../local-package\n"
+              , " - hackage-dep-1.0\n"
+              ]
 
       StackYaml {..} <- getMarkedItem <$> decodeThrow decodeStackYaml exampleYaml
 

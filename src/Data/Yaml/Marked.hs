@@ -7,6 +7,7 @@ module Data.Yaml.Marked
   , getMarkedStartIndex
   , getMarkedEnd
   , getMarkedEndIndex
+  , YamlMark (..)
   ) where
 
 import Prelude

@@ -1,102 +1,88 @@
 module Data.Yaml.Marked.Replace
   ( Replace
   , newReplace
-  , runReplace
-  , Replaces
-  , newReplaces
+  , ReplaceException (..)
   , runReplaces
   ) where
 
 import Prelude
 
-import Control.Applicative (Alternative)
-import Control.Monad (guard, void)
+import Control.Monad (when)
 import Control.Monad.Trans.Resource (MonadThrow (..))
 import Data.Bifunctor (second)
 import Data.ByteString (ByteString)
 import qualified Data.ByteString.Char8 as BS8
-import Data.Function (on)
-import Data.List.NonEmpty (NonEmpty)
-import qualified Data.List.NonEmpty as NE
+import Data.List (sortOn)
 import Data.Yaml.Marked
-import qualified Rampart
-import UnliftIO.Exception (Exception)
-
-data ReplaceException
-  = InvalidMarked (Marked ()) String
-  | OverlappingReplaces (NonEmpty (Replace, Replace))
-  deriving stock (Show)
-  deriving anyclass (Exception)
+import UnliftIO.Exception (Exception (..))
 
 data Replace = Replace
   { replaceIndex :: Int
   , replacedLength :: Int
   , replacedBy :: ByteString
   }
-  deriving stock (Show)
+  deriving stock (Eq, Show)
 
-newReplace :: MonadThrow m => Marked a -> ByteString -> m Replace
-newReplace m bs =
-  either (throwM . InvalidMarked (void m)) pure $ do
-    si <- note "Negative start" $ guarded (>= 0) $ getMarkedStartIndex m
-    ei <- note "End before start" $ guarded (>= si) $ getMarkedEndIndex m
-    pure $
-      Replace
-        { replaceIndex = si
-        , replacedLength = ei - si
-        , replacedBy = bs
-        }
-
-runReplace :: Replace -> ByteString -> ByteString
-runReplace = runReplaces . Replaces . pure
-
-newtype Replaces = Replaces
-  { unReplaces :: [Replace]
-  }
-
-newReplaces :: MonadThrow m => [Replace] -> m Replaces
-newReplaces rs
-  | Just x <- mOverlaps = throwM $ OverlappingReplaces x
-  | otherwise = pure $ Replaces rs
+newReplace :: Marked a -> ByteString -> Replace
+newReplace m = Replace si (ei - si)
  where
-  mOverlaps =
-    NE.nonEmpty
-      [ (a, b)
-      | a <- rs
-      , b <- rs
-      , a `replaceOverlaps` b
-      ]
+  si = getMarkedStartIndex m
+  ei = getMarkedEndIndex m
 
-runReplaces :: Replaces -> ByteString -> ByteString
-runReplaces = go 0 "" . unReplaces
+data ReplaceException
+  = NegativeStartIndex Replace
+  | NegativeLength Replace
+  | ReplaceOutOfBounds Replace Int
+  | OverlappingReplace Replace
+  deriving stock (Eq, Show)
+
+instance Exception ReplaceException where
+  displayException = \case
+    NegativeStartIndex r ->
+      "The replacement " <> show r <> " has a negative start index"
+    NegativeLength r ->
+      "The replacement " <> show r <> " has negative length"
+    ReplaceOutOfBounds r bLen ->
+      "The replacement "
+        <> show r
+        <> " is trying to replace more characters than remain in the ByteString ("
+        <> show bLen
+        <> ")"
+    OverlappingReplace r ->
+      "The replacement "
+        <> show r
+        <> " is where an earlier replacement has already been made"
+
+runReplaces :: MonadThrow m => [Replace] -> ByteString -> m ByteString
+runReplaces = go 0 "" . sortOn replaceIndex
  where
-  go :: Int -> ByteString -> [Replace] -> ByteString -> ByteString
-  go _ acc [] bs = acc <> bs
-  go off acc (r : rs) bs =
-    let
-      sIdx = replaceIndex r - off
-      rLen = replacedLength r
-      repl = replacedBy r
+  go _ acc [] bs = pure $ acc <> bs
+  go offset acc (r : rs) bs = do
+    (before, after) <- breakAtOffsetReplace offset r bs
 
-      (before, after) = second (BS8.drop rLen) $ BS8.splitAt sIdx bs
+    go
+      (offset + BS8.length before + replacedLength r)
+      (acc <> before <> replacedBy r)
+      rs
+      after
 
-      acc' = acc <> before <> repl
-      off' = off + BS8.length before + replacedLength r
-    in
-      go off' acc' rs after
+breakAtOffsetReplace
+  :: MonadThrow m => Int -> Replace -> ByteString -> m (ByteString, ByteString)
+breakAtOffsetReplace offset r bs = do
+  when (sIdx < 0) $
+    throwM $
+      -- A negative index post-recursion means a later replacement has landed
+      -- within something we already replaced. Otherwise, it was just negative
+      -- to begin with (e.g. out-of-bounds)
+      if offset == 0
+        then NegativeStartIndex r
+        else OverlappingReplace r
 
-replaceOverlaps :: Replace -> Replace -> Bool
-replaceOverlaps a b = case (Rampart.relate `on` toInterval) a b of
-  Rampart.Overlaps {} -> True
-  _ -> False
+  when (rLen < 0) $ throwM $ NegativeLength r
+  when (rLen > bLen) $ throwM $ ReplaceOutOfBounds r bLen
+
+  pure $ second (BS8.drop rLen) $ BS8.splitAt sIdx bs
  where
-  toInterval :: Replace -> Rampart.Interval Int
-  toInterval r =
-    Rampart.toInterval
-      (replaceIndex r, replaceIndex r + replacedLength r - 1)
-
-note :: e -> Maybe a -> Either e a
-note e = maybe (Left e) pure
-
-guarded :: Alternative f => (a -> Bool) -> a -> f a
-guarded p x = x <$ guard (p x)
+  sIdx = replaceIndex r - offset
+  rLen = replacedLength r
+  bLen = BS8.length bs
