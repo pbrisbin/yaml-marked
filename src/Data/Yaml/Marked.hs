@@ -2,6 +2,7 @@ module Data.Yaml.Marked
   ( Marked
   , markedZero
   , markedItem
+  , markedEvent
   , getMarkedItem
   , getMarkedLength
   , getMarkedIndexes
@@ -19,7 +20,7 @@ module Data.Yaml.Marked
 import Prelude
 
 import Data.Function (on)
-import Text.Libyaml (YamlMark (..))
+import Text.Libyaml (Event, MarkedEvent (..), YamlMark (..))
 
 data Marked a = Marked
   { _markedItem :: a
@@ -50,6 +51,10 @@ markedItem a s e =
     , _markedStart = s
     , _markedEnd = e
     }
+
+markedEvent :: MarkedEvent -> Marked Event
+markedEvent MarkedEvent {..} =
+  markedItem yamlEvent yamlStartMark yamlEndMark
 
 getMarkedItem :: Marked a -> a
 getMarkedItem = _markedItem
