@@ -7,6 +7,7 @@ module Data.Yaml.Marked.Parse
   , (.:)
   , array
   , json
+  , value
   , text
   , double
   , int
@@ -15,6 +16,7 @@ module Data.Yaml.Marked.Parse
 import Prelude
 
 import Data.Aeson (FromJSON, Key)
+import qualified Data.Aeson as Aeson
 import qualified Data.Aeson.KeyMap as KeyMap
 import Data.Bifunctor (first)
 import Data.Foldable (toList)
@@ -97,6 +99,9 @@ array f = withArray "an array" $ traverse f . toList
 -- | Parse the value using its 'FromJSON' instance, passing along the marks
 json :: FromJSON a => Marked Value -> Either String (Marked a)
 json = traverse valueAsJSON
+
+value :: Marked Value -> Either String (Marked Aeson.Value)
+value = json
 
 text :: Marked Value -> Either String (Marked Text)
 text = json

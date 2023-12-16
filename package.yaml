@@ -88,7 +88,11 @@ tests:
     source-dirs: test
     ghc-options: -threaded -rtsopts "-with-rtsopts=-N"
     dependencies:
+      - aeson
+      - bytestring
       - hspec
+      - hspec-expectations-json
+      - yaml
       - yaml-marked
 
   readme:
