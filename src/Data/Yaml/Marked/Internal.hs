@@ -93,17 +93,17 @@ parseAll :: ConduitT MarkedEvent o Parse [Marked Value]
 parseAll =
   headC >>= \case
     Nothing -> pure []
-    Just (MarkedEvent EventStreamStart _ _) -> parseDocs
+    Just (MarkedEvent EventStreamStart _ _) -> parseStream
     x -> throwUnexpectedEvent x
 
-parseDocs :: ConduitT MarkedEvent o Parse [Marked Value]
-parseDocs =
+parseStream :: ConduitT MarkedEvent o Parse [Marked Value]
+parseStream =
   headC >>= \case
     Just (MarkedEvent EventStreamEnd _ _) -> pure []
     Just (MarkedEvent EventDocumentStart _ _) -> do
-      res <- parseO
+      res <- parseDocument
       requireEvent EventDocumentEnd
-      (res :) <$> parseDocs
+      (res :) <$> parseStream
     x -> throwUnexpectedEvent x
 
 newtype Warning = DuplicateKey JSONPath
@@ -144,8 +144,8 @@ lookupAnchor
   -> m (Maybe (Marked Value))
 lookupAnchor = gets . Map.lookup
 
-parseO :: ConduitT MarkedEvent o Parse (Marked Value)
-parseO = do
+parseDocument :: ConduitT MarkedEvent o Parse (Marked Value)
+parseDocument = do
   me <- headC
   case me of
     Just e@(MarkedEvent (EventScalar v tag style a) _ _) -> do
@@ -183,7 +183,7 @@ parseS startMark !n a front = do
       traverse_ (defineAnchor res) a
       pure res
     _ -> do
-      o <- local (Index n :) parseO
+      o <- local (Index n :) parseDocument
       parseS startMark (succ n) a $ front . (:) o
 
 parseM
@@ -218,7 +218,7 @@ parseM startMark mergedKeys a front = do
           throwIO $ NonStringKey path
 
       (mergedKeys', al') <- local (Key s :) $ do
-        o <- parseO
+        o <- parseDocument
         let al = do
               when (KeyMap.member s front && Set.notMember s mergedKeys) $ do
                 path <- asks reverse
