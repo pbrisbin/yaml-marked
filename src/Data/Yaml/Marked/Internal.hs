@@ -73,6 +73,14 @@ mkHelper eventParser f src = liftIO $ catches go handlers
     , Handler $ \ex -> pure $ Left $ OtherParseException ex
     ]
 
+throwUnexpectedEvent :: MonadIO m => Maybe MarkedEvent -> m a
+throwUnexpectedEvent event = throwIO $ UnexpectedEvent (Y.yamlEvent <$> event) Nothing
+
+requireEvent :: MonadIO m => Event -> ConduitT MarkedEvent o m ()
+requireEvent e = do
+  f <- fmap Y.yamlEvent <$> headC
+  unless (f == Just e) $ throwIO $ UnexpectedEvent f $ Just e
+
 parseOne :: ConduitT MarkedEvent o Parse (Marked Value)
 parseOne = do
   docs <- parseAll
@@ -86,7 +94,7 @@ parseAll =
   headC >>= \case
     Nothing -> pure []
     Just (MarkedEvent EventStreamStart _ _) -> parseDocs
-    x -> missingEvent x
+    x -> throwUnexpectedEvent x
 
 parseDocs :: ConduitT MarkedEvent o Parse [Marked Value]
 parseDocs =
@@ -96,15 +104,7 @@ parseDocs =
       res <- parseO
       requireEvent EventDocumentEnd
       (res :) <$> parseDocs
-    x -> missingEvent x
-
-missingEvent :: MonadIO m => Maybe MarkedEvent -> m a
-missingEvent event = throwIO $ UnexpectedEvent (Y.yamlEvent <$> event) Nothing
-
-requireEvent :: MonadIO m => Event -> ConduitT MarkedEvent o m ()
-requireEvent e = do
-  f <- fmap Y.yamlEvent <$> headC
-  unless (f == Just e) $ throwIO $ UnexpectedEvent f $ Just e
+    x -> throwUnexpectedEvent x
 
 newtype Warning = DuplicateKey JSONPath
   deriving stock (Eq, Show)
