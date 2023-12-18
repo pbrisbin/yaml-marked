@@ -24,7 +24,7 @@ data Value
   | Number !Scientific
   | Bool !Bool
   | Null
-  deriving stock (Show)
+  deriving stock (Eq, Show)
 
 type MarkedObject = KeyMap (Marked Value)
 
