@@ -4,6 +4,7 @@ module Data.Yaml.Marked
   , markedItem
   , markedEvent
   , getMarkedItem
+  , getMarkedPath
   , getMarkedLength
   , getMarkedIndexes
   , getMarkedStart
@@ -24,6 +25,7 @@ import Text.Libyaml (Event, MarkedEvent (..), YamlMark (..))
 
 data Marked a = Marked
   { _markedItem :: a
+  , _markedPath :: FilePath
   , _markedStart :: YamlMark
   , _markedEnd :: YamlMark
   }
@@ -37,27 +39,31 @@ instance Eq a => Eq (Marked a) where
 instance Show a => Show (Marked a) where
   show = show . simplify
 
-simplify :: Marked a -> (a, (Int, Int, Int), (Int, Int, Int))
-simplify (Marked i (YamlMark si sl sc) (YamlMark ei el ec)) =
-  (i, (si, sl, sc), (ei, el, ec))
+simplify :: Marked a -> (a, FilePath, (Int, Int, Int), (Int, Int, Int))
+simplify (Marked i fp (YamlMark si sl sc) (YamlMark ei el ec)) =
+  (i, fp, (si, sl, sc), (ei, el, ec))
 
-markedZero :: a -> Marked a
-markedZero a = markedItem a zeroYamlMark zeroYamlMark
+markedZero :: a -> FilePath -> Marked a
+markedZero a fp = markedItem a fp zeroYamlMark zeroYamlMark
 
-markedItem :: a -> YamlMark -> YamlMark -> Marked a
-markedItem a s e =
+markedItem :: a -> FilePath -> YamlMark -> YamlMark -> Marked a
+markedItem a fp s e =
   Marked
     { _markedItem = a
+    , _markedPath = fp
     , _markedStart = s
     , _markedEnd = e
     }
 
-markedEvent :: MarkedEvent -> Marked Event
-markedEvent MarkedEvent {..} =
-  markedItem yamlEvent yamlStartMark yamlEndMark
+markedEvent :: FilePath -> MarkedEvent -> Marked Event
+markedEvent fp MarkedEvent {..} =
+  markedItem yamlEvent fp yamlStartMark yamlEndMark
 
 getMarkedItem :: Marked a -> a
 getMarkedItem = _markedItem
+
+getMarkedPath :: Marked a -> FilePath
+getMarkedPath = _markedPath
 
 getMarkedIndexes :: Marked a -> (Int, Int)
 getMarkedIndexes = (,) <$> getMarkedStartIndex <*> getMarkedEndIndex

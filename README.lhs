@@ -98,7 +98,8 @@ example = do
   --    - hackage-dep-1.0
   --
 
-  StackYaml {..} <- getMarkedItem <$> decodeThrow decodeStackYaml stackYaml
+  StackYaml {..} <- getMarkedItem
+    <$> decodeThrow decodeStackYaml "stack.yaml" stackYaml
 ```
 
 Because our decoder returns a `Marked StackYaml`, that's what we get. We don't

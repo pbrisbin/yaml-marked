@@ -28,9 +28,10 @@ spec = do
             <*> (array text =<< (o .: "extra-deps"))
 
       (resolver, extraDeps) <-
-        getMarkedItem <$> decodeThrow decodeExample exampleYaml
+        getMarkedItem <$> decodeThrow decodeExample "<input>" exampleYaml
 
       getMarkedItem resolver `shouldBe` "lts-20.11"
+      getMarkedPath resolver `shouldBe` "<input>"
       getMarkedIndexes resolver `shouldBe` (10, 19)
       getMarkedLength resolver `shouldBe` 9
       getMarkedStartLine resolver `shouldBe` 0
@@ -41,6 +42,7 @@ spec = do
       case getMarkedItem extraDeps of
         [extraDep0, extraDep1] -> do
           getMarkedItem extraDep0 `shouldBe` "../local-package"
+          getMarkedPath extraDep0 `shouldBe` "<input>"
           getMarkedIndexes extraDep0 `shouldBe` (35, 51)
           getMarkedLength extraDep0 `shouldBe` 16
           getMarkedStartLine extraDep0 `shouldBe` 2
@@ -49,6 +51,7 @@ spec = do
           getMarkedEndColumn extraDep0 `shouldBe` 19
 
           getMarkedItem extraDep1 `shouldBe` "hackage-dep-1.0"
+          getMarkedPath extraDep1 `shouldBe` "<input>"
           getMarkedIndexes extraDep1 `shouldBe` (55, 70)
           getMarkedLength extraDep1 `shouldBe` 15
           getMarkedStartLine extraDep1 `shouldBe` 3

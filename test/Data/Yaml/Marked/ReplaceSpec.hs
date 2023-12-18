@@ -94,7 +94,7 @@ spec = do
           <*> (array text =<< (o .: "extra-deps"))
 
     (resolver, extraDeps) <-
-      getMarkedItem <$> decodeThrow decodeExample exampleYaml
+      getMarkedItem <$> decodeThrow decodeExample "<input>" exampleYaml
 
     let replaces =
           [ replaceMarked resolver "lts-20.11"

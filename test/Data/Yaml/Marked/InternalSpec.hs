@@ -90,21 +90,21 @@ decodeTestCases :: [ByteString] -> Spec
 decodeTestCases = traverse_ $ \yaml -> do
   it ("for " <> toDocStringYaml yaml) $ do
     expected <- Yaml.decodeThrow yaml
-    actual <- decodeThrow value yaml
+    actual <- decodeThrow value "<input>" yaml
     expected `shouldBeJson` getMarkedItem actual
 
 decodeAllTestCases :: [ByteString] -> Spec
 decodeAllTestCases = traverse_ $ \yaml -> do
   it ("for " <> toDocStringYaml yaml) $ do
     expected <- Yaml.decodeAllThrow @_ @Aeson.Value yaml
-    actual <- decodeAllThrow value yaml
+    actual <- decodeAllThrow value "<input>" yaml
     Aeson.toJSON expected `shouldBeJson` Aeson.toJSON (map getMarkedItem actual)
 
 decodeFailTestCases :: [ByteString] -> Spec
 decodeFailTestCases = traverse_ $ \yaml -> do
   it ("for " <> toDocStringYaml yaml) $ do
     Yaml.decodeThrow @Maybe @Aeson.Value yaml `shouldBe` Nothing
-    decodeThrow value yaml `shouldBe` Nothing
+    decodeThrow value "<input>" yaml `shouldBe` Nothing
 
 toDocStringYaml :: ByteString -> String
 toDocStringYaml yaml = show truncated

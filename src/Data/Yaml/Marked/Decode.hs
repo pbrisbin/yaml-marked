@@ -27,16 +27,20 @@ import qualified Text.Libyaml as Y
 decodeThrow
   :: MonadThrow m
   => (Marked Value -> Either String a)
+  -> FilePath
+  -- ^ Name of input being parsed
   -> ByteString
   -> m a
-decodeThrow p = either throwM pure . decodeEither p
+decodeThrow p fp = either throwM pure . decodeEither p fp
 
 decodeAllThrow
   :: MonadThrow m
   => (Marked Value -> Either String a)
+  -> FilePath
+  -- ^ Name of input being parsed
   -> ByteString
   -> m [a]
-decodeAllThrow p = either throwM pure . decodeAllEither p
+decodeAllThrow p fp = either throwM pure . decodeAllEither p fp
 
 decodeFileEither
   :: MonadIO m
@@ -57,25 +61,30 @@ decodeFileWithWarnings
   => (Marked Value -> Either String a)
   -> FilePath
   -> m (Either ParseException (a, [Warning]))
-decodeFileWithWarnings p = liftIO . decodeHelper p . Y.decodeFileMarked
+decodeFileWithWarnings p fp = liftIO $ decodeHelper p fp $ Y.decodeFileMarked fp
 
 decodeAllFileWithWarnings
   :: MonadIO m
   => (Marked Value -> Either String a)
   -> FilePath
   -> m (Either ParseException ([a], [Warning]))
-decodeAllFileWithWarnings p = liftIO . decodeAllHelper p . Y.decodeFileMarked
+decodeAllFileWithWarnings p fp =
+  liftIO $ decodeAllHelper p fp $ Y.decodeFileMarked fp
 
 decodeEither
   :: (Marked Value -> Either String a)
+  -> FilePath
+  -- ^ Name of input being parsed
   -> ByteString
   -> Either ParseException a
-decodeEither p =
-  fmap fst . unsafePerformIO . decodeHelper p . Y.decodeMarked
+decodeEither p fp =
+  fmap fst . unsafePerformIO . decodeHelper p fp . Y.decodeMarked
 
 decodeAllEither
   :: (Marked Value -> Either String a)
+  -> FilePath
+  -- ^ Name of input being parsed
   -> ByteString
   -> Either ParseException [a]
-decodeAllEither p =
-  fmap fst . unsafePerformIO . decodeAllHelper p . Y.decodeMarked
+decodeAllEither p fp =
+  fmap fst . unsafePerformIO . decodeAllHelper p fp . Y.decodeMarked

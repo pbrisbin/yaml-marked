@@ -41,7 +41,6 @@ import Data.Yaml (ParseException (..))
 import Data.Yaml.Marked
 import Data.Yaml.Marked.Value
 import Text.Libyaml hiding (decode, decodeFile, encode, encodeFile)
-import qualified Text.Libyaml as Y
 import UnliftIO.Exception
 
 newtype Warning = DuplicateKey JSONPath
@@ -98,22 +97,38 @@ lookupAliasKey an = do
 decodeHelper
   :: MonadIO m
   => (Marked Value -> Either String a)
+  -> FilePath
+  -- ^ Name for file being parsed
   -> ConduitT () MarkedEvent Parse ()
+  -- ^ "Text.Libyaml" source
   -> m (Either ParseException (a, [Warning]))
-decodeHelper = mkHelper parseOne
+decodeHelper parse fp src =
+  mkHelper parseOne go $ src .| mapC (remarkEvents fp)
+ where
+  go = \case
+    Nothing -> parse $ markedZero Null fp
+    Just mv -> parse mv
 
 decodeAllHelper
   :: MonadIO m
   => (Marked Value -> Either String a)
+  -> FilePath
+  -- ^ Name for file being parsed
   -> ConduitT () MarkedEvent Parse ()
+  -- ^ "Text.Libyaml" source
   -> m (Either ParseException ([a], [Warning]))
-decodeAllHelper parseMarked = mkHelper parseAll $ traverse parseMarked
+decodeAllHelper parse fp src =
+  mkHelper parseAll (traverse parse) $ src .| mapC (remarkEvents fp)
+
+remarkEvents :: FilePath -> MarkedEvent -> Marked Event
+remarkEvents fp MarkedEvent {..} =
+  markedItem yamlEvent fp yamlStartMark yamlEndMark
 
 mkHelper
   :: MonadIO m
-  => ConduitT MarkedEvent Void Parse val
+  => ConduitT (Marked Event) Void Parse val
   -> (val -> Either String a)
-  -> ConduitT () MarkedEvent Parse ()
+  -> ConduitT () (Marked Event) Parse ()
   -> m (Either ParseException (a, [Warning]))
 mkHelper eventParser f src = liftIO $ catches go handlers
  where
@@ -124,64 +139,71 @@ mkHelper eventParser f src = liftIO $ catches go handlers
     , Handler $ \ex -> pure $ Left $ OtherParseException ex
     ]
 
-throwUnexpectedEvent :: MonadIO m => Maybe MarkedEvent -> m a
-throwUnexpectedEvent event =
-  throwIO $ UnexpectedEvent (Y.yamlEvent <$> event) Nothing
+throwUnexpectedEvent :: MonadIO m => Maybe (Marked Event) -> m a
+throwUnexpectedEvent me =
+  throwIO $ UnexpectedEvent (getMarkedItem <$> me) Nothing
 
-requireEvent :: MonadIO m => Event -> ConduitT MarkedEvent o m ()
+requireEvent :: MonadIO m => Event -> ConduitT (Marked Event) o m ()
 requireEvent e = do
-  f <- fmap Y.yamlEvent <$> headC
+  f <- fmap getMarkedItem <$> headC
   unless (f == Just e) $ throwIO $ UnexpectedEvent f $ Just e
 
-parseOne :: ConduitT MarkedEvent o Parse (Marked Value)
+parseOne :: ConduitT (Marked Event) o Parse (Maybe (Marked Value))
 parseOne = do
   docs <- parseAll
   case docs of
-    [] -> pure $ markedZero Null
-    [doc] -> pure doc
+    [] -> pure Nothing
+    [doc] -> pure $ Just doc
     _ -> throwIO MultipleDocuments
 
-parseAll :: ConduitT MarkedEvent o Parse [Marked Value]
+parseAll :: ConduitT (Marked Event) o Parse [Marked Value]
 parseAll =
   headC >>= \case
     Nothing -> pure []
-    Just (MarkedEvent EventStreamStart _ _) -> parseStream
+    Just me | EventStreamStart <- getMarkedItem me -> parseStream
     x -> throwUnexpectedEvent x
 
-parseStream :: ConduitT MarkedEvent o Parse [Marked Value]
+parseStream :: ConduitT (Marked Event) o Parse [Marked Value]
 parseStream =
   headC >>= \case
-    Just (MarkedEvent EventStreamEnd _ _) -> pure []
-    Just (MarkedEvent EventDocumentStart _ _) -> do
+    Just me | EventStreamEnd <- getMarkedItem me -> pure []
+    Just me | EventDocumentStart <- getMarkedItem me -> do
       res <- parseDocument
       requireEvent EventDocumentEnd
       (res :) <$> parseStream
     x -> throwUnexpectedEvent x
 
-parseDocument :: ConduitT MarkedEvent o Parse (Marked Value)
+parseDocument :: ConduitT (Marked Event) o Parse (Marked Value)
 parseDocument =
   headC >>= \case
-    Just e@(MarkedEvent (EventScalar v tag style a) _ _) ->
-      parseScalar e v tag style a
-    Just (MarkedEvent (EventSequenceStart _ _ a) s _) ->
-      parseSequence s 0 a id
-    Just (MarkedEvent (EventMappingStart _ _ a) s _) ->
-      parseMapping s mempty a mempty
-    Just (MarkedEvent (EventAlias an) _ _) -> lookupAnchor an
-    me -> throwIO $ UnexpectedEvent (yamlEvent <$> me) Nothing
+    Just me
+      | EventScalar v tag style a <- getMarkedItem me ->
+          parseScalar me v tag style a
+    Just me
+      | EventSequenceStart _ _ a <- getMarkedItem me ->
+          parseSequence (getMarkedStart me) 0 a id
+    Just me
+      | EventMappingStart _ _ a <- getMarkedItem me ->
+          parseMapping (getMarkedStart me) mempty a mempty
+    Just me | EventAlias an <- getMarkedItem me -> lookupAnchor an
+    x -> throwIO $ UnexpectedEvent (getMarkedItem <$> x) Nothing
 
 parseSequence
   :: YamlMark
   -> Int
   -> Anchor
   -> ([Marked Value] -> [Marked Value])
-  -> ConduitT MarkedEvent o Parse (Marked Value)
-parseSequence startMark !n a front = do
-  me <- peekC
-  case me of
-    Just (MarkedEvent EventSequenceEnd _ endMark) -> do
+  -> ConduitT (Marked Event) o Parse (Marked Value)
+parseSequence startMark !n a front =
+  peekC >>= \case
+    Just me | EventSequenceEnd <- getMarkedItem me -> do
       dropC 1
-      let res = markedItem (Array $ V.fromList $ front []) startMark endMark
+      let res =
+            markedItem
+              (Array $ V.fromList $ front [])
+              (getMarkedPath me)
+              startMark
+              (getMarkedEnd me)
       res <$ traverse_ (`defineAnchor` res) a
     _ -> do
       o <- local (Index n :) parseDocument
@@ -192,18 +214,25 @@ parseMapping
   -> Set Key
   -> Anchor
   -> KeyMap (Marked Value)
-  -> ConduitT MarkedEvent o Parse (Marked Value)
+  -> ConduitT (Marked Event) o Parse (Marked Value)
 parseMapping startMark mergedKeys a front =
   headC >>= \case
-    Just (MarkedEvent EventMappingEnd _ endMark) -> do
-      let res = markedItem (Object front) startMark endMark
+    Just me | EventMappingEnd <- getMarkedItem me -> do
+      let res =
+            markedItem
+              (Object front)
+              (getMarkedPath me)
+              startMark
+              (getMarkedEnd me)
       res <$ traverse_ (`defineAnchor` res) a
     me -> do
       s <- case me of
-        Just e@(MarkedEvent (EventScalar v tag style a') _ _) ->
-          parseScalarKey e v tag style a'
-        Just (MarkedEvent (EventAlias an) _ _) ->
-          lookupAliasKey an
+        Just me'
+          | EventScalar v tag style a' <- getMarkedItem me' ->
+              parseScalarKey me' v tag style a'
+        Just me'
+          | EventAlias an <- getMarkedItem me' ->
+              lookupAliasKey an
         _ -> do
           path <- ask
           throwIO $ NonStringKey path
@@ -244,37 +273,37 @@ mergeMarkedObject al v | Object om <- getMarkedItem v = KeyMap.union al om
 mergeMarkedObject al _ = al
 
 parseScalar
-  :: MarkedEvent
+  :: Marked Event
   -> ByteString
   -> Tag
   -> Style
   -> Anchor
-  -> ConduitT MarkedEvent o Parse (Marked Value)
-parseScalar e v tag style a = do
-  s <- parseScalarText e v tag style a
-  pure $ textToValue style tag s <$ markedEvent e
+  -> ConduitT (Marked Event) o Parse (Marked Value)
+parseScalar me v tag style a = do
+  s <- parseScalarText me v tag style a
+  pure $ textToValue style tag s <$ me
 
 parseScalarKey
-  :: MarkedEvent
+  :: Marked Event
   -> ByteString
   -> Tag
   -> Style
   -> Anchor
-  -> ConduitT MarkedEvent o Parse Key
-parseScalarKey e v tag style =
-  fmap Key.fromText . parseScalarText e v tag style
+  -> ConduitT (Marked Event) o Parse Key
+parseScalarKey me v tag style =
+  fmap Key.fromText . parseScalarText me v tag style
 
 parseScalarText
-  :: MarkedEvent
+  :: Marked Event
   -> ByteString
   -> Tag
   -> Style
   -> Anchor
-  -> ConduitT MarkedEvent o Parse Text
-parseScalarText e v tag style = (res <$) . traverse_ (`defineAnchor` anc)
+  -> ConduitT (Marked Event) o Parse Text
+parseScalarText me v tag style = (res <$) . traverse_ (`defineAnchor` anc)
  where
   res = decodeUtf8With lenientDecode v
-  anc = textToValue style tag res <$ markedEvent e
+  anc = textToValue style tag res <$ me
 
 textToValue :: Style -> Tag -> Text -> Value
 textToValue SingleQuoted _ t = String t
