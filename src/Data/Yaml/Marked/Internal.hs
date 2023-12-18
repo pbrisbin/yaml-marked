@@ -26,7 +26,7 @@ import Data.ByteString (ByteString)
 import Data.Char (isOctDigit, ord, toUpper)
 import Data.DList (DList)
 import Data.Foldable (toList, traverse_)
-import qualified Data.List as List
+import Data.List (foldl', (\\))
 import Data.Map (Map)
 import qualified Data.Map as Map
 import Data.Scientific (Scientific)
@@ -77,10 +77,23 @@ defineAnchor
 defineAnchor name = modify . Map.insert name
 
 lookupAnchor
-  :: MonadState (Map String (Marked Value)) m
+  :: (MonadIO m, MonadState (Map String (Marked Value)) m)
   => String
-  -> m (Maybe (Marked Value))
-lookupAnchor = gets . Map.lookup
+  -> m (Marked Value)
+lookupAnchor name =
+  maybe (throwIO $ UnknownAlias name) pure =<< gets (Map.lookup name)
+
+lookupAliasKey
+  :: ( MonadIO m
+     , MonadState (Map String (Marked Value)) m
+     )
+  => String
+  -> m Key
+lookupAliasKey an = do
+  a <- lookupAnchor an
+  case a of
+    v | String t <- getMarkedItem v -> pure $ Key.fromText t
+    v -> throwIO $ NonStringKeyAlias an $ valueToValue $ getMarkedItem v
 
 decodeHelper
   :: MonadIO m
@@ -112,7 +125,8 @@ mkHelper eventParser f src = liftIO $ catches go handlers
     ]
 
 throwUnexpectedEvent :: MonadIO m => Maybe MarkedEvent -> m a
-throwUnexpectedEvent event = throwIO $ UnexpectedEvent (Y.yamlEvent <$> event) Nothing
+throwUnexpectedEvent event =
+  throwIO $ UnexpectedEvent (Y.yamlEvent <$> event) Nothing
 
 requireEvent :: MonadIO m => Event -> ConduitT MarkedEvent o m ()
 requireEvent e = do
@@ -153,8 +167,7 @@ parseDocument =
       parseSequence s 0 a id
     Just (MarkedEvent (EventMappingStart _ _ a) s _) ->
       parseMapping s mempty a mempty
-    Just (MarkedEvent (EventAlias an) _ _) ->
-      maybe (throwIO $ UnknownAlias an) pure =<< lookupAnchor an
+    Just (MarkedEvent (EventAlias an) _ _) -> lookupAnchor an
     me -> throwIO $ UnexpectedEvent (yamlEvent <$> me) Nothing
 
 parseSequence
@@ -168,13 +181,8 @@ parseSequence startMark !n a front = do
   case me of
     Just (MarkedEvent EventSequenceEnd _ endMark) -> do
       dropC 1
-      let res =
-            markedItem
-              (Array $ V.fromList $ front [])
-              startMark
-              endMark
-      traverse_ (`defineAnchor` res) a
-      pure res
+      let res = markedItem (Array $ V.fromList $ front []) startMark endMark
+      res <$ traverse_ (`defineAnchor` res) a
     _ -> do
       o <- local (Index n :) parseDocument
       parseSequence startMark (succ n) a $ front . (:) o
@@ -194,40 +202,46 @@ parseMapping startMark mergedKeys a front =
       s <- case me of
         Just e@(MarkedEvent (EventScalar v tag style a') _ _) ->
           parseScalarKey e v tag style a'
-        Just (MarkedEvent (EventAlias an) _ _) -> do
-          m <- lookupAnchor an
-          case m of
-            Nothing -> throwIO $ UnknownAlias an
-            Just v | String t <- getMarkedItem v -> pure $ Key.fromText t
-            Just v ->
-              throwIO $
-                NonStringKeyAlias an $
-                  valueToValue $
-                    getMarkedItem v
+        Just (MarkedEvent (EventAlias an) _ _) ->
+          lookupAliasKey an
         _ -> do
           path <- ask
           throwIO $ NonStringKey path
 
       (mergedKeys', al') <- local (Key s :) $ do
         o <- parseDocument
+
         let al = do
               when (KeyMap.member s front && Set.notMember s mergedKeys) $ do
                 path <- asks reverse
                 tell $ pure $ DuplicateKey path
-              pure (Set.delete s mergedKeys, KeyMap.insert s o front)
+              pure
+                ( Set.delete s mergedKeys
+                , KeyMap.insert s o front
+                )
+
         if s == "<<"
           then case getMarkedItem o of
-            Object l -> pure (merge l)
-            Array l -> pure $ merge $ List.foldl' mergeObjects mempty $ toList l
+            Object l -> pure $ merge l
+            Array l ->
+              pure $
+                merge $
+                  foldl' mergeMarkedObject mempty $
+                    toList l
             _ -> al
           else al
+
       parseMapping startMark mergedKeys' a al'
  where
-  mergeObjects al v | Object om <- getMarkedItem v = KeyMap.union al om
-  mergeObjects al _ = al
-
   merge xs =
-    (Set.fromList (KeyMap.keys xs List.\\ KeyMap.keys front), KeyMap.union front xs)
+    ( Set.fromList (KeyMap.keys xs \\ KeyMap.keys front)
+    , KeyMap.union front xs
+    )
+
+mergeMarkedObject
+  :: KeyMap (Marked Value) -> Marked Value -> KeyMap (Marked Value)
+mergeMarkedObject al v | Object om <- getMarkedItem v = KeyMap.union al om
+mergeMarkedObject al _ = al
 
 parseScalar
   :: MarkedEvent
