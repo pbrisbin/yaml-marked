@@ -44,6 +44,44 @@ import Text.Libyaml hiding (decode, decodeFile, encode, encodeFile)
 import qualified Text.Libyaml as Y
 import UnliftIO.Exception
 
+newtype Warning = DuplicateKey JSONPath
+  deriving stock (Eq, Show)
+
+newtype ParseT m a = ParseT
+  { unParseT :: RWST JSONPath (DList Warning) (Map String (Marked Value)) m a
+  }
+  deriving newtype
+    ( Functor
+    , Applicative
+    , Monad
+    , MonadIO
+    , MonadResource
+    , MonadReader JSONPath
+    , MonadWriter (DList Warning)
+    , MonadState (Map String (Marked Value))
+    )
+
+runParseT :: Monad m => ParseT m a -> m (a, [Warning])
+runParseT p = second toList <$> evalRWST (unParseT p) [] Map.empty
+
+type Parse = ParseT (ResourceT IO)
+
+runParse :: ConduitT () Void Parse a -> IO (a, [Warning])
+runParse = runResourceT . runParseT . runConduit
+
+defineAnchor
+  :: MonadState (Map String (Marked Value)) m
+  => String
+  -> Marked Value
+  -> m ()
+defineAnchor name = modify . Map.insert name
+
+lookupAnchor
+  :: MonadState (Map String (Marked Value)) m
+  => String
+  -> m (Maybe (Marked Value))
+lookupAnchor = gets . Map.lookup
+
 decodeHelper
   :: MonadIO m
   => (Marked Value -> Either String a)
@@ -106,44 +144,6 @@ parseStream =
       (res :) <$> parseStream
     x -> throwUnexpectedEvent x
 
-newtype Warning = DuplicateKey JSONPath
-  deriving stock (Eq, Show)
-
-newtype ParseT m a = ParseT
-  { unParseT :: RWST JSONPath (DList Warning) (Map String (Marked Value)) m a
-  }
-  deriving newtype
-    ( Functor
-    , Applicative
-    , Monad
-    , MonadIO
-    , MonadResource
-    , MonadReader JSONPath
-    , MonadWriter (DList Warning)
-    , MonadState (Map String (Marked Value))
-    )
-
-runParseT :: Monad m => ParseT m a -> m (a, [Warning])
-runParseT p = second toList <$> evalRWST (unParseT p) [] Map.empty
-
-type Parse = ParseT (ResourceT IO)
-
-runParse :: ConduitT () Void Parse a -> IO (a, [Warning])
-runParse = runResourceT . runParseT . runConduit
-
-defineAnchor
-  :: MonadState (Map String (Marked Value)) m
-  => Marked Value
-  -> String
-  -> m ()
-defineAnchor value name = modify $ Map.insert name value
-
-lookupAnchor
-  :: MonadState (Map String (Marked Value)) m
-  => String
-  -> m (Maybe (Marked Value))
-lookupAnchor = gets . Map.lookup
-
 parseDocument :: ConduitT MarkedEvent o Parse (Marked Value)
 parseDocument = do
   me <- headC
@@ -180,7 +180,7 @@ parseS startMark !n a front = do
               (Array $ V.fromList $ front [])
               startMark
               endMark
-      traverse_ (defineAnchor res) a
+      traverse_ (`defineAnchor` res) a
       pure res
     _ -> do
       o <- local (Index n :) parseDocument
@@ -197,7 +197,7 @@ parseM startMark mergedKeys a front = do
   case me of
     Just (MarkedEvent EventMappingEnd _ endMark) -> do
       let res = markedItem (Object front) startMark endMark
-      traverse_ (defineAnchor res) a
+      traverse_ (`defineAnchor` res) a
       pure res
     _ -> do
       s <- case me of
@@ -245,7 +245,7 @@ parseScalar
   -> Style
   -> Tag
   -> ConduitT MarkedEvent o Parse Text
-parseScalar e v a style tag = res <$ traverse_ (defineAnchor anc) a
+parseScalar e v a style tag = res <$ traverse_ (`defineAnchor` anc) a
  where
   res = decodeUtf8With lenientDecode v
   anc = textToValue style tag res <$ markedEvent e
