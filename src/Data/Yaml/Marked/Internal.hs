@@ -23,7 +23,7 @@ import Data.Bifunctor (first, second)
 import Data.Bitraversable (Bitraversable, bimapM)
 import Data.Bits (shiftL, (.|.))
 import Data.ByteString (ByteString)
-import Data.Char (isOctDigit, ord, toUpper)
+import Data.Char (isOctDigit, ord)
 import Data.DList (DList)
 import Data.Foldable (toList, traverse_)
 import Data.List (foldl', (\\))
@@ -289,9 +289,7 @@ textToValue _ _ t
   | Right x <- textToScientific t = Number x
   | otherwise = String t
  where
-  x `isLike` ref = x `elem` [ref, T.toUpper ref, titleCased]
-   where
-    titleCased = toUpper (T.head ref) `T.cons` T.tail ref
+  x `isLike` ref = x `elem` [ref, T.toUpper ref, T.toTitle ref]
 
 textToScientific :: Text -> Either String Scientific
 textToScientific = Atto.parseOnly (num <* Atto.endOfInput)
