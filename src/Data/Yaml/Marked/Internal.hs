@@ -282,7 +282,8 @@ textToValue DoubleQuoted _ t = String t
 textToValue _ StrTag t = String t
 textToValue Folded _ t = String t
 textToValue _ _ t
-  | t `elem` ["null", "Null", "NULL", "~", ""] = Null
+  | t `isLike` "null" = Null
+  | t `elem` ["~", ""] = Null
   | any (t `isLike`) ["y", "yes", "on", "true"] = Bool True
   | any (t `isLike`) ["n", "no", "off", "false"] = Bool False
   | Right x <- textToScientific t = Number x
