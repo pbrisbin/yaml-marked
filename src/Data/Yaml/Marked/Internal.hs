@@ -62,7 +62,7 @@ newtype ParseT m a = ParseT
     )
 
 runParseT :: Monad m => ParseT m a -> m (a, [Warning])
-runParseT p = second toList <$> evalRWST (unParseT p) [] Map.empty
+runParseT p = second toList <$> evalRWST (unParseT p) [] mempty
 
 type Parse = ParseT (ResourceT IO)
 
@@ -145,23 +145,17 @@ parseStream =
     x -> throwUnexpectedEvent x
 
 parseDocument :: ConduitT MarkedEvent o Parse (Marked Value)
-parseDocument = do
-  me <- headC
-  case me of
-    Just e@(MarkedEvent (EventScalar v tag style a) _ _) -> do
-      s <- parseScalar e v a style tag
-      let val = textToValue style tag s
-      pure $ val <$ markedEvent e
+parseDocument =
+  headC >>= \case
+    Just e@(MarkedEvent (EventScalar v tag style a) _ _) ->
+      parseScalar e v tag style a
     Just (MarkedEvent (EventSequenceStart _ _ a) s _) ->
       parseSequence s 0 a id
     Just (MarkedEvent (EventMappingStart _ _ a) s _) ->
-      parseM s mempty a KeyMap.empty
-    Just (MarkedEvent (EventAlias an) _ _) -> do
-      m <- lookupAnchor an
-      case m of
-        Nothing -> throwIO $ UnknownAlias an
-        Just v -> pure v
-    _ -> throwIO $ UnexpectedEvent (yamlEvent <$> me) Nothing
+      parseMapping s mempty a mempty
+    Just (MarkedEvent (EventAlias an) _ _) ->
+      maybe (throwIO $ UnknownAlias an) pure =<< lookupAnchor an
+    me -> throwIO $ UnexpectedEvent (yamlEvent <$> me) Nothing
 
 parseSequence
   :: YamlMark
@@ -185,23 +179,21 @@ parseSequence startMark !n a front = do
       o <- local (Index n :) parseDocument
       parseSequence startMark (succ n) a $ front . (:) o
 
-parseM
+parseMapping
   :: YamlMark
   -> Set Key
   -> Anchor
   -> KeyMap (Marked Value)
   -> ConduitT MarkedEvent o Parse (Marked Value)
-parseM startMark mergedKeys a front = do
-  me <- headC
-  case me of
+parseMapping startMark mergedKeys a front =
+  headC >>= \case
     Just (MarkedEvent EventMappingEnd _ endMark) -> do
       let res = markedItem (Object front) startMark endMark
-      traverse_ (`defineAnchor` res) a
-      pure res
-    _ -> do
+      res <$ traverse_ (`defineAnchor` res) a
+    me -> do
       s <- case me of
         Just e@(MarkedEvent (EventScalar v tag style a') _ _) ->
-          Key.fromText <$> parseScalar e v a' style tag
+          parseScalarKey e v tag style a'
         Just (MarkedEvent (EventAlias an) _ _) -> do
           m <- lookupAnchor an
           case m of
@@ -226,10 +218,10 @@ parseM startMark mergedKeys a front = do
         if s == "<<"
           then case getMarkedItem o of
             Object l -> pure (merge l)
-            Array l -> pure $ merge $ List.foldl' mergeObjects KeyMap.empty $ V.toList l
+            Array l -> pure $ merge $ List.foldl' mergeObjects mempty $ toList l
             _ -> al
           else al
-      parseM startMark mergedKeys' a al'
+      parseMapping startMark mergedKeys' a al'
  where
   mergeObjects al v | Object om <- getMarkedItem v = KeyMap.union al om
   mergeObjects al _ = al
@@ -240,11 +232,32 @@ parseM startMark mergedKeys a front = do
 parseScalar
   :: MarkedEvent
   -> ByteString
-  -> Anchor
-  -> Style
   -> Tag
+  -> Style
+  -> Anchor
+  -> ConduitT MarkedEvent o Parse (Marked Value)
+parseScalar e v tag style a = do
+  s <- parseScalarText e v tag style a
+  pure $ textToValue style tag s <$ markedEvent e
+
+parseScalarKey
+  :: MarkedEvent
+  -> ByteString
+  -> Tag
+  -> Style
+  -> Anchor
+  -> ConduitT MarkedEvent o Parse Key
+parseScalarKey e v tag style =
+  fmap Key.fromText . parseScalarText e v tag style
+
+parseScalarText
+  :: MarkedEvent
+  -> ByteString
+  -> Tag
+  -> Style
+  -> Anchor
   -> ConduitT MarkedEvent o Parse Text
-parseScalar e v a style tag = res <$ traverse_ (`defineAnchor` anc) a
+parseScalarText e v tag style = (res <$) . traverse_ (`defineAnchor` anc)
  where
   res = decodeUtf8With lenientDecode v
   anc = textToValue style tag res <$ markedEvent e
