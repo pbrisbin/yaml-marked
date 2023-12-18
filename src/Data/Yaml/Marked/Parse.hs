@@ -5,6 +5,7 @@ module Data.Yaml.Marked.Parse
   , withScientific
   , withBool
   , (.:)
+  , (.:?)
   , array
   , json
   , value
@@ -89,6 +90,9 @@ typeMismatch expected =
 
 (.:) :: MarkedObject -> Key -> Either String (Marked Value)
 (.:) km k = maybe (Left "Key not found") Right $ KeyMap.lookup k km
+
+(.:?) :: MarkedObject -> Key -> Either String (Maybe (Marked Value))
+(.:?) km k = Right $ KeyMap.lookup k km
 
 array
   :: (Marked Value -> Either String (Marked a))
