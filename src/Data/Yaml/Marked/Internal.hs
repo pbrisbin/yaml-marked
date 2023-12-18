@@ -149,12 +149,11 @@ parseDocument = do
   me <- headC
   case me of
     Just e@(MarkedEvent (EventScalar v tag style a) _ _) -> do
-      mv <-
-        textToValue style tag
-          <$> parseScalar e v a style tag
-      pure $ mv <$ markedEvent e
+      s <- parseScalar e v a style tag
+      let val = textToValue style tag s
+      pure $ val <$ markedEvent e
     Just (MarkedEvent (EventSequenceStart _ _ a) s _) ->
-      parseS s 0 a id
+      parseSequence s 0 a id
     Just (MarkedEvent (EventMappingStart _ _ a) s _) ->
       parseM s mempty a KeyMap.empty
     Just (MarkedEvent (EventAlias an) _ _) -> do
@@ -164,13 +163,13 @@ parseDocument = do
         Just v -> pure v
     _ -> throwIO $ UnexpectedEvent (yamlEvent <$> me) Nothing
 
-parseS
+parseSequence
   :: YamlMark
   -> Int
   -> Anchor
   -> ([Marked Value] -> [Marked Value])
   -> ConduitT MarkedEvent o Parse (Marked Value)
-parseS startMark !n a front = do
+parseSequence startMark !n a front = do
   me <- peekC
   case me of
     Just (MarkedEvent EventSequenceEnd _ endMark) -> do
@@ -184,7 +183,7 @@ parseS startMark !n a front = do
       pure res
     _ -> do
       o <- local (Index n :) parseDocument
-      parseS startMark (succ n) a $ front . (:) o
+      parseSequence startMark (succ n) a $ front . (:) o
 
 parseM
   :: YamlMark
