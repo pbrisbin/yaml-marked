@@ -68,9 +68,8 @@ mkHelper eventParser f src = liftIO $ catches go handlers
  where
   go = first AesonException . firstM f <$> runParse (src .| eventParser)
   handlers =
-    [ Handler $ \pe -> pure $ Left (pe :: ParseException)
-    , Handler $ \ye -> pure $ Left $ InvalidYaml $ Just (ye :: YamlException)
-    , Handler $ \ex -> throwIO @_ @SomeAsyncException ex
+    [ Handler $ \pe -> pure $ Left pe
+    , Handler $ \ye -> pure $ Left $ InvalidYaml $ Just ye
     , Handler $ \ex -> pure $ Left $ OtherParseException ex
     ]
 
