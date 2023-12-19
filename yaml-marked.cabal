@@ -171,6 +171,7 @@ test-suite spec
     , bytestring
     , hspec
     , hspec-expectations-json
+    , text
     , yaml
     , yaml-marked
   default-language: Haskell2010

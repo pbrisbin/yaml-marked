@@ -37,8 +37,8 @@ valueAsJSON = parseEither parseJSON . valueToValue
 -- | Convert a 'Value' to an equivalent 'Data.Aeson.Value'
 valueToValue :: Value -> Aeson.Value
 valueToValue = \case
-  Object km -> Aeson.Object $ valueToValue . getMarkedItem <$> km
-  Array v -> Aeson.Array $ valueToValue . getMarkedItem <$> v
+  Object km -> Aeson.Object $ valueToValue . markedItem <$> km
+  Array v -> Aeson.Array $ valueToValue . markedItem <$> v
   String x -> Aeson.String x
   Number x -> Aeson.Number x
   Bool x -> Aeson.Bool x

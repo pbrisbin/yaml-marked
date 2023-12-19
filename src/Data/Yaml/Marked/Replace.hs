@@ -4,28 +4,33 @@ module Data.Yaml.Marked.Replace
   , replaceMarked
   , ReplaceException (..)
   , runReplaces
+  , runReplacesOnOverlapping
   ) where
 
 import Prelude
 
-import Control.Monad (when)
+import Control.Monad (void, when)
 import Control.Monad.Trans.Resource (MonadThrow (..))
 import Data.Bifunctor (second)
 import Data.ByteString (ByteString)
 import qualified Data.ByteString.Char8 as BS8
 import Data.List (sortOn)
 import Data.Yaml.Marked
+import Numeric.Natural
 import UnliftIO.Exception (Exception (..))
 
 data Replace = Replace
-  { replaceIndex :: Int
-  , replacedLength :: Int
+  { replaceIndex :: Natural
+  , replacedLength :: Natural
   , replacedBy :: ByteString
   }
   deriving stock (Eq, Show)
 
 -- | Create a 'Replace' directly at given index and length
-newReplace :: Int -> Int -> ByteString -> Replace
+--
+-- NB. This function is unsafe in that it can be used with negative literals and
+-- will fail at runtime. Prefer 'replaceMarked'.
+newReplace :: Natural -> Natural -> ByteString -> Replace
 newReplace idx len bs =
   Replace
     { replaceIndex = idx
@@ -35,21 +40,15 @@ newReplace idx len bs =
 
 -- | Create a 'Replace' for something 'Marked'
 replaceMarked :: Marked a -> ByteString -> Replace
-replaceMarked m = newReplace (getMarkedStartIndex m) (getMarkedLength m)
+replaceMarked m = newReplace (locationIndex $ markedLocationStart m) (markedSpan m)
 
 data ReplaceException
-  = NegativeStartIndex Replace
-  | NegativeLength Replace
-  | ReplaceOutOfBounds Replace Int
+  = ReplaceOutOfBounds Replace Natural
   | OverlappingReplace Replace
   deriving stock (Eq, Show)
 
 instance Exception ReplaceException where
   displayException = \case
-    NegativeStartIndex r ->
-      "The replacement " <> show r <> " has a negative start index"
-    NegativeLength r ->
-      "The replacement " <> show r <> " has negative length"
     ReplaceOutOfBounds r bLen ->
       "The replacement "
         <> show r
@@ -62,13 +61,48 @@ instance Exception ReplaceException where
         <> " is where an earlier replacement has already been made"
 
 runReplaces :: MonadThrow m => [Replace] -> ByteString -> m ByteString
-runReplaces = go 0 "" . sortOn replaceIndex
+runReplaces = runReplacesOnOverlapping $ throwM . OverlappingReplace
+
+runReplacesOnOverlapping
+  :: MonadThrow m
+  => (Replace -> m a)
+  -- ^ What to do with the first overlapping 'Replace' if encountered
+  --
+  -- NB. the overlapping replace(s) will be ignored, but this allows you to log
+  -- it as a warning, or use 'throwM' to halt (which 'runReplaces' does).
+  -> [Replace]
+  -> ByteString
+  -> m ByteString
+runReplacesOnOverlapping f rs bs = do
+  rs' <- filterOverlapping f $ sortOn replaceIndex rs
+  runReplaces' 0 "" rs' bs
+
+runReplaces'
+  :: MonadThrow m
+  => Natural
+  -> ByteString
+  -> [Replace]
+  -> ByteString
+  -> m ByteString
+runReplaces' _ acc [] bs = pure $ acc <> bs
+runReplaces' offset acc (r : rs) bs = do
+  (before, after) <- breakAtOffsetReplace offset r bs
+  let newOffset = offset + fromIntegral (BS8.length before) + replacedLength r
+  runReplaces' newOffset (acc <> before <> replacedBy r) rs after
+
+filterOverlapping
+  :: Monad m => (Replace -> m a) -> [Replace] -> m [Replace]
+filterOverlapping onOverlap = go []
  where
-  go _ acc [] bs = pure $ acc <> bs
-  go offset acc (r : rs) bs = do
-    (before, after) <- breakAtOffsetReplace offset r bs
-    let newOffset = offset + BS8.length before + replacedLength r
-    go newOffset (acc <> before <> replacedBy r) rs after
+  go acc [] = pure acc
+  go acc (r : rs)
+    | any (r `precedesEndOf`) acc = do
+        void $ onOverlap r
+        go acc rs
+    | otherwise = go (acc <> [r]) rs
+
+precedesEndOf :: Replace -> Replace -> Bool
+precedesEndOf a b = replaceIndex a <= replaceIndex b + replacedLength b
 
 -- | Break a 'ByteString' into the content before/after a replacement
 --
@@ -76,7 +110,7 @@ runReplaces = go 0 "" . sortOn replaceIndex
 -- input.
 breakAtOffsetReplace
   :: MonadThrow m
-  => Int
+  => Natural
   -- ^ An amount to shift the 'replaceIndex' by
   --
   -- Since this function is called recursively to incrementally replace within
@@ -86,19 +120,13 @@ breakAtOffsetReplace
   -> ByteString
   -> m (ByteString, ByteString)
 breakAtOffsetReplace offset r bs = do
-  when (sIdx < 0) $
-    throwM $
-      -- A negative index post-recursion (offset != 0) means a later replacement
-      -- has landed within something we already replaced. Otherwise, it was just
-      -- negative to begin with.
-      if offset == 0
-        then NegativeStartIndex r
-        else OverlappingReplace r
-
-  when (rLen < 0) $ throwM $ NegativeLength r
   when (rLen > bLen) $ throwM $ ReplaceOutOfBounds r bLen
-  pure $ second (BS8.drop rLen) $ BS8.splitAt sIdx bs
+  pure $
+    second (BS8.drop $ fromIntegral rLen) $
+      BS8.splitAt (fromIntegral sIdx) bs
  where
-  sIdx = replaceIndex r - offset
+  sIdx
+    | offset > replaceIndex r = error "TODO"
+    | otherwise = replaceIndex r - offset
   rLen = replacedLength r
-  bLen = BS8.length bs
+  bLen = fromIntegral $ BS8.length bs

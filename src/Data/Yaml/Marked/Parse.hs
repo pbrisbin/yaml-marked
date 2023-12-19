@@ -12,6 +12,7 @@ module Data.Yaml.Marked.Parse
   , text
   , double
   , int
+  , bool
   ) where
 
 import Prelude
@@ -115,3 +116,6 @@ double = json
 
 int :: Marked Value -> Either String (Marked Int)
 int = json
+
+bool :: Marked Value -> Either String (Marked Bool)
+bool = json

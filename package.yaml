@@ -92,6 +92,7 @@ tests:
       - bytestring
       - hspec
       - hspec-expectations-json
+      - text
       - yaml
       - yaml-marked
 

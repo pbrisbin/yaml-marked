@@ -4,60 +4,147 @@ module Data.Yaml.Marked.DecodeSpec
 
 import Prelude
 
+import Control.Applicative (asum)
+import Data.Text (Text)
 import Data.Yaml.Marked
 import Data.Yaml.Marked.Decode
 import Data.Yaml.Marked.Parse
+import Data.Yaml.Marked.Value
 import Test.Hspec
+
+data StackYaml = StackYaml
+  { resolver :: Marked Text
+  , extraDeps :: Marked [Marked ExtraDep]
+  , someSetting :: Marked Bool
+  }
+  deriving stock (Eq, Show)
+
+decodeStackYaml :: Marked Value -> Either String (Marked StackYaml)
+decodeStackYaml = withObject "example" $ \o ->
+  StackYaml
+    <$> (text =<< (o .: "resolver"))
+    <*> (array decodeExtraDep =<< (o .: "extra-deps"))
+    <*> (bool =<< (o .: "some-setting"))
+
+data ExtraDep
+  = Plain Text
+  | Git GitCommit
+  deriving stock (Eq, Show)
+
+decodeExtraDep :: Marked Value -> Either String (Marked ExtraDep)
+decodeExtraDep x =
+  asum
+    [ fmap Git <$> decodeGitCommit x
+    , fmap Plain <$> text x
+    ]
+
+data GitCommit = GitCommit
+  { git :: Marked Text
+  , commit :: Marked Text
+  }
+  deriving stock (Eq, Show)
+
+decodeGitCommit :: Marked Value -> Either String (Marked GitCommit)
+decodeGitCommit = withObject "GitCommit" $ \o ->
+  GitCommit
+    <$> (text =<< o .: "git")
+    <*> (text =<< o .: "commit")
 
 spec :: Spec
 spec = do
   describe "decodeThrow" $ do
     it "decodes with marks" $ do
-      let
-        exampleYaml =
-          mconcat
-            [ "resolver: lts-20.11\n"
-            , "extra-deps:\n"
-            , " - ../local-package\n"
-            , " - hackage-dep-1.0\n"
-            ]
+      let exampleYaml =
+            mconcat
+              [ "resolver: lts-20.11\n"
+              , "extra-deps:\n"
+              , " # A path\n"
+              , " - ../local-package\n"
+              , "\n"
+              , " # A hackage package\n"
+              , " - hackage-dep-1.0\n"
+              , "\n"
+              , " # A git ref\n"
+              , " - git: foo\n"
+              , "   commit: abc\n"
+              , "\n"
+              , "# Trailing\n"
+              , " - foo-0.0.0\n"
+              , "\n"
+              , "some-setting: Yes\n"
+              , "\n"
+              , "# Trailing comment"
+              ]
 
-        decodeExample = withObject "example" $ \o ->
-          (,)
-            <$> (text =<< (o .: "resolver"))
-            <*> (array text =<< (o .: "extra-deps"))
-
-      (resolver, extraDeps) <-
-        getMarkedItem <$> decodeThrow decodeExample "<input>" exampleYaml
-
-      getMarkedItem resolver `shouldBe` "lts-20.11"
-      getMarkedPath resolver `shouldBe` "<input>"
-      getMarkedIndexes resolver `shouldBe` (10, 19)
-      getMarkedLength resolver `shouldBe` 9
-      getMarkedStartLine resolver `shouldBe` 0
-      getMarkedStartColumn resolver `shouldBe` 10
-      getMarkedEndLine resolver `shouldBe` 0
-      getMarkedEndColumn resolver `shouldBe` 19
-
-      case getMarkedItem extraDeps of
-        [extraDep0, extraDep1] -> do
-          getMarkedItem extraDep0 `shouldBe` "../local-package"
-          getMarkedPath extraDep0 `shouldBe` "<input>"
-          getMarkedIndexes extraDep0 `shouldBe` (35, 51)
-          getMarkedLength extraDep0 `shouldBe` 16
-          getMarkedStartLine extraDep0 `shouldBe` 2
-          getMarkedStartColumn extraDep0 `shouldBe` 3
-          getMarkedEndLine extraDep0 `shouldBe` 2
-          getMarkedEndColumn extraDep0 `shouldBe` 19
-
-          getMarkedItem extraDep1 `shouldBe` "hackage-dep-1.0"
-          getMarkedPath extraDep1 `shouldBe` "<input>"
-          getMarkedIndexes extraDep1 `shouldBe` (55, 70)
-          getMarkedLength extraDep1 `shouldBe` 15
-          getMarkedStartLine extraDep1 `shouldBe` 3
-          getMarkedStartColumn extraDep1 `shouldBe` 3
-          getMarkedEndLine extraDep1 `shouldBe` 3
-          getMarkedEndColumn extraDep1 `shouldBe` 18
-        eds ->
-          expectationFailure $
-            "Expected to parse 2 extra-deps, got " <> show eds
+      decodeThrow decodeStackYaml "<input>" exampleYaml
+        `shouldReturn` Marked
+          { markedItem =
+              StackYaml
+                { resolver =
+                    Marked
+                      { markedItem = "lts-20.11"
+                      , markedPath = "<input>"
+                      , markedLocationStart = Location 10 0 10
+                      , markedLocationEnd = Location 19 0 19
+                      }
+                , extraDeps =
+                    Marked
+                      { markedItem =
+                          [ Marked
+                              { markedItem = Plain "../local-package"
+                              , markedPath = "<input>"
+                              , markedLocationStart = Location 45 3 3
+                              , markedLocationEnd = Location 61 3 19
+                              }
+                          , Marked
+                              { markedItem = Plain "hackage-dep-1.0"
+                              , markedPath = "<input>"
+                              , markedLocationStart = Location 87 6 3
+                              , markedLocationEnd = Location 102 6 18
+                              }
+                          , Marked
+                              { markedItem =
+                                  Git $
+                                    GitCommit
+                                      { git =
+                                          Marked
+                                            { markedItem = "foo"
+                                            , markedPath = "<input>"
+                                            , markedLocationStart = Location 125 9 8
+                                            , markedLocationEnd = Location 128 9 11
+                                            }
+                                      , commit =
+                                          Marked
+                                            { markedItem = "abc"
+                                            , markedPath = "<input>"
+                                            , markedLocationStart = Location 140 10 11
+                                            , markedLocationEnd = Location 143 10 14
+                                            }
+                                      }
+                              , markedPath = "<input>"
+                              , markedLocationStart = Location 120 9 3
+                              , markedLocationEnd = Location 143 10 14
+                              }
+                          , Marked
+                              { markedItem = Plain "foo-0.0.0"
+                              , markedPath = "<input>"
+                              , markedLocationStart = Location 159 13 3
+                              , markedLocationEnd = Location 168 13 12
+                              }
+                          ]
+                      , markedPath = "<input>"
+                      , markedLocationStart = Location 43 3 1
+                      , markedLocationEnd = Location 168 13 12
+                      }
+                , someSetting =
+                    Marked
+                      { markedItem = True
+                      , markedPath = "<input>"
+                      , markedLocationStart = Location 184 15 14
+                      , markedLocationEnd = Location 187 15 17
+                      }
+                }
+          , markedPath = "<input>"
+          , markedLocationStart = Location 0 0 0
+          , markedLocationEnd = Location 187 15 17
+          }

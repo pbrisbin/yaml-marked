@@ -91,14 +91,14 @@ decodeTestCases = traverse_ $ \yaml -> do
   it ("for " <> toDocStringYaml yaml) $ do
     expected <- Yaml.decodeThrow yaml
     actual <- decodeThrow value "<input>" yaml
-    expected `shouldBeJson` getMarkedItem actual
+    expected `shouldBeJson` markedItem actual
 
 decodeAllTestCases :: [ByteString] -> Spec
 decodeAllTestCases = traverse_ $ \yaml -> do
   it ("for " <> toDocStringYaml yaml) $ do
     expected <- Yaml.decodeAllThrow @_ @Aeson.Value yaml
     actual <- decodeAllThrow value "<input>" yaml
-    Aeson.toJSON expected `shouldBeJson` Aeson.toJSON (map getMarkedItem actual)
+    Aeson.toJSON expected `shouldBeJson` Aeson.toJSON (map markedItem actual)
 
 decodeFailTestCases :: [ByteString] -> Spec
 decodeFailTestCases = traverse_ $ \yaml -> do

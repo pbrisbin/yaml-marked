@@ -98,8 +98,8 @@ example = do
   --    - hackage-dep-1.0
   --
 
-  StackYaml {..} <- getMarkedItem
-    <$> decodeThrow decodeStackYaml "stack.yaml" stackYaml
+  StackYaml {..} <-
+    markedItem <$> decodeThrow decodeStackYaml "stack.yaml" stackYaml
 ```
 
 Because our decoder returns a `Marked StackYaml`, that's what we get. We don't
@@ -116,7 +116,7 @@ build `Replace` values from the `Marked` items we linted:
 ```haskell
   let replaces =
         [ replaceMarked resolver "lts-20.11"
-        , replaceMarked (getMarkedItem extraDeps !! 1) "hackage-dep-2.0.1"
+        , replaceMarked (markedItem extraDeps !! 1) "hackage-dep-2.0.1"
         ]
 ```
 
