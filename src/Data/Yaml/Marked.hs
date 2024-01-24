@@ -20,10 +20,30 @@ data Marked a = Marked
   { markedItem :: a
   , markedPath :: FilePath
   , markedLocationStart :: Location
+  -- ^ Location of the first character of the item
+  --
+  -- In the following example, marking @value@ will have a start location:
+  --
+  -- @
+  -- key: value\n
+  --      ^-- HERE
+  -- @
   , markedLocationEnd :: Location
+  -- ^ Location of the first character /after/ the item
+  --
+  -- In the following example, marking @value@ will have an end location:
+  --
+  -- @
+  -- key: value\n
+  --           ^-- HERE
+  -- @
   }
   deriving stock (Eq, Show, Functor, Foldable, Traversable)
 
+-- | Index, line, and column of a character
+--
+-- All values are 0-based. This is done so that locations in empty content can
+-- be represented.
 data Location = Location
   { locationIndex :: Natural
   , locationLine :: Natural
