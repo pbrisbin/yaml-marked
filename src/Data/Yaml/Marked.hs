@@ -1,6 +1,5 @@
 module Data.Yaml.Marked
   ( Marked (..)
-  , markedSpan
   , markAtZero
   , Location (..)
   , locationZero
@@ -31,14 +30,6 @@ data Location = Location
   , locationColumn :: Natural
   }
   deriving stock (Eq, Show)
-
-markedSpan :: Marked a -> Natural
-markedSpan Marked {..}
-  | end >= start = end - start
-  | otherwise = 0
- where
-  end = locationIndex markedLocationEnd
-  start = locationIndex markedLocationStart
 
 markAtZero :: a -> FilePath -> Marked a
 markAtZero a fp =

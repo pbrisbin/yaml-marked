@@ -40,7 +40,13 @@ newReplace idx len bs =
 
 -- | Create a 'Replace' for something 'Marked'
 replaceMarked :: Marked a -> ByteString -> Replace
-replaceMarked m = newReplace (locationIndex $ markedLocationStart m) (markedSpan m)
+replaceMarked Marked {..} = newReplace idx len
+ where
+  idx = locationIndex markedLocationStart
+  end = locationIndex markedLocationEnd
+  len
+    | end >= idx = end - idx
+    | otherwise = 0
 
 data ReplaceException
   = ReplaceOutOfBounds Replace Natural
