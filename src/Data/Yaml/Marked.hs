@@ -7,8 +7,6 @@ module Data.Yaml.Marked
     -- * Interop with "Data.Yaml"
   , MarkedEvent
   , fromMarkedEvent
-  -- , YamlMark
-  -- , locationFromYamlMark
   ) where
 
 import Prelude
