@@ -38,8 +38,7 @@ data Marked a = Marked
 
 -- | Index, line, and column of a character
 --
--- All values are 0-based. This is done so that locations in empty content can
--- be represented.
+-- NB. All values are 0-based.
 data Location = Location
   { locationIndex :: Natural
   , locationLine :: Natural
