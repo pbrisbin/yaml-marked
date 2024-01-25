@@ -114,8 +114,16 @@ decodeHelper parse fp src =
   mkHelper parseOne go $ src .| mapC (`fromMarkedEvent` fp)
  where
   go = \case
-    Nothing -> parse $ markAtZero Null fp
+    Nothing -> parse zeroMarkedNull
     Just mv -> parse mv
+
+  zeroMarkedNull =
+    Marked
+      { markedItem = Null
+      , markedPath = fp
+      , markedLocationStart = Location 0 0 0
+      , markedLocationEnd = Location 0 0 0
+      }
 
 decodeAllHelper
   :: MonadIO m

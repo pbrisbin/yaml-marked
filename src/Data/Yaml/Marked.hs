@@ -1,8 +1,6 @@
 module Data.Yaml.Marked
   ( Marked (..)
-  , markAtZero
   , Location (..)
-  , locationZero
 
     -- * Interop with "Data.Yaml"
   , MarkedEvent
@@ -48,23 +46,6 @@ data Location = Location
   , locationColumn :: Natural
   }
   deriving stock (Eq, Show)
-
-markAtZero :: a -> FilePath -> Marked a
-markAtZero a fp =
-  Marked
-    { markedItem = a
-    , markedPath = fp
-    , markedLocationStart = locationZero
-    , markedLocationEnd = locationZero
-    }
-
-locationZero :: Location
-locationZero =
-  Location
-    { locationIndex = 0
-    , locationLine = 0
-    , locationColumn = 0
-    }
 
 locationFromYamlMark :: YamlMark -> Location
 locationFromYamlMark YamlMark {..} =
