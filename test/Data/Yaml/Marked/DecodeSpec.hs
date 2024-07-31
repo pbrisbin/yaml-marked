@@ -4,7 +4,7 @@ module Data.Yaml.Marked.DecodeSpec
 
 import Prelude
 
-import Control.Applicative (asum)
+import Data.Functor.Alt ((<!>))
 import Data.Text (Text)
 import Data.Yaml.Marked
 import Data.Yaml.Marked.Decode
@@ -32,11 +32,7 @@ data ExtraDep
   deriving stock (Eq, Show)
 
 decodeExtraDep :: Marked Value -> Either String (Marked ExtraDep)
-decodeExtraDep x =
-  asum
-    [ fmap Git <$> decodeGitCommit x
-    , fmap Plain <$> text x
-    ]
+decodeExtraDep x = (fmap Git <$> decodeGitCommit x) <!> (fmap Plain <$> text x)
 
 data GitCommit = GitCommit
   { git :: Marked Text
