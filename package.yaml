@@ -82,6 +82,7 @@ library:
     - text
     - transformers
     - unliftio
+    - unordered-containers
     - vector
     - yaml
 

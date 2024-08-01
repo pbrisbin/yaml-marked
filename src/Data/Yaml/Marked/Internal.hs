@@ -19,10 +19,10 @@ import Control.Monad.Reader (MonadReader (..), asks)
 import Control.Monad.State (MonadState (..), gets, modify)
 import Control.Monad.Trans.RWS.Strict (RWST, evalRWST)
 import Control.Monad.Writer (MonadWriter (..), tell)
-import Data.Aeson.Key (Key)
-import qualified Data.Aeson.Key as Key
-import Data.Aeson.KeyMap (KeyMap)
-import qualified Data.Aeson.KeyMap as KeyMap
+import Data.Aeson.Compat.Key (Key)
+import qualified Data.Aeson.Compat.Key as Key
+import Data.Aeson.Compat.KeyMap (KeyMap)
+import qualified Data.Aeson.Compat.KeyMap as KeyMap
 import Data.Aeson.Types (JSONPath, JSONPathElement (..))
 import qualified Data.Attoparsec.Text as Atto
 import Data.Bifunctor (first, second)

@@ -17,9 +17,9 @@ module Data.Yaml.Marked.Parse
 
 import Prelude
 
-import Data.Aeson (FromJSON, Key)
-import qualified Data.Aeson as Aeson
-import qualified Data.Aeson.KeyMap as KeyMap
+import Data.Aeson.Compat (FromJSON, Key)
+import qualified Data.Aeson.Compat as Aeson
+import qualified Data.Aeson.Compat.KeyMap as KeyMap
 import Data.Bifunctor (first)
 import Data.Foldable (toList)
 import Data.Scientific (Scientific)
