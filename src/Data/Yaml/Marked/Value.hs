@@ -10,7 +10,7 @@ import Prelude
 
 import Data.Aeson (FromJSON (..))
 import qualified Data.Aeson as Aeson
-import Data.Aeson.KeyMap (KeyMap)
+import Data.Aeson.Compat.KeyMap (KeyMap)
 import Data.Aeson.Types (parseEither)
 import Data.Scientific (Scientific)
 import Data.Text (Text)

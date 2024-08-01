@@ -27,6 +27,9 @@ source-repository head
 
 library
   exposed-modules:
+      Data.Aeson.Compat
+      Data.Aeson.Compat.Key
+      Data.Aeson.Compat.KeyMap
       Data.Yaml.Marked
       Data.Yaml.Marked.Decode
       Data.Yaml.Marked.Internal
@@ -78,6 +81,7 @@ library
     , text
     , transformers
     , unliftio
+    , unordered-containers
     , vector
     , yaml
   default-language: Haskell2010
