@@ -1,8 +1,7 @@
 name: yaml-marked
-version: 0.0.0.0
+version: 0.1.0.0
 synopsis: Support for parsing and rendering YAML documents with marks.
-description: |
-  TODO
+description: Please see README.md
 category: Data
 author: Pat Brisbin <pbrisbin@gmail.com>
 maintainer: Pat Brisbin <pbrisbin@gmail.com>
