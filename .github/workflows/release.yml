@@ -1,0 +1,22 @@
+name: Release
+
+on:
+  push:
+    branches: main
+
+jobs:
+  release:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - id: tag
+        uses: freckle/haskell-tag-action@v1
+
+      - if: steps.tag.outputs.tag
+        run: stack upload --pvp-bounds lower .
+        env:
+          HACKAGE_KEY: ${{ secrets.HACKAGE_API_KEY }}
+
+          # Use minimum LTS to set lowest lower bounds
+          STACK_YAML: stack-lts16.yaml
