@@ -1,13 +1,13 @@
 cabal-version: 1.18
 
--- This file has been generated from package.yaml by hpack version 0.36.0.
+-- This file has been generated from package.yaml by hpack version 0.37.0.
 --
 -- see: https://github.com/sol/hpack
 
 name:           yaml-marked
-version:        0.0.0.0
+version:        0.1.0.0
 synopsis:       Support for parsing and rendering YAML documents with marks.
-description:    TODO
+description:    Please see README.md
 category:       Data
 stability:      stable
 homepage:       https://github.com/pbrisbin/yaml-marked#readme
