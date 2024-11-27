@@ -18,7 +18,7 @@ displayParseException = \case
 
 prettyPrintParseExceptionInSource :: ByteString -> ParseException -> String
 prettyPrintParseExceptionInSource bs = \case
-  InvalidYaml (Just ex) -> undefined
+  -- InvalidYaml (Just ex) -> undefined
   ex ->
     unlines
       [ prettyPrintParseException ex
