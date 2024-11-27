@@ -23,7 +23,7 @@ import Data.Aeson.Compat.Key (Key)
 import qualified Data.Aeson.Compat.Key as Key
 import Data.Aeson.Compat.KeyMap (KeyMap)
 import qualified Data.Aeson.Compat.KeyMap as KeyMap
-import Data.Aeson.Types (JSONPath, JSONPathElement (..), Parser, parseEither)
+import Data.Aeson.Types (JSONPath, JSONPathElement (..))
 import qualified Data.Attoparsec.Text as Atto
 import Data.Bifunctor (first, second)
 import Data.Bitraversable (Bitraversable, bimapM)
@@ -104,7 +104,7 @@ lookupAliasKey an = do
 
 decodeHelper
   :: MonadIO m
-  => (Marked Value -> Parser a)
+  => (Marked Value -> Either String a)
   -> FilePath
   -- ^ Name for file being parsed
   -> ConduitT () MarkedEvent Parse ()
@@ -127,7 +127,7 @@ decodeHelper parse fp src =
 
 decodeAllHelper
   :: MonadIO m
-  => (Marked Value -> Parser a)
+  => (Marked Value -> Either String a)
   -> FilePath
   -- ^ Name for file being parsed
   -> ConduitT () MarkedEvent Parse ()
@@ -139,13 +139,12 @@ decodeAllHelper parse fp src =
 mkHelper
   :: MonadIO m
   => ConduitT (Marked Event) Void Parse val
-  -> (val -> Parser a)
+  -> (val -> Either String a)
   -> ConduitT () (Marked Event) Parse ()
   -> m (Either ParseException (a, [Warning]))
 mkHelper eventParser f src = liftIO $ catches go handlers
  where
-  go =
-    first AesonException . firstM (parseEither f) <$> runParse (src .| eventParser)
+  go = first AesonException . firstM f <$> runParse (src .| eventParser)
   handlers =
     [ Handler $ \pe -> pure $ Left pe
     , Handler $ \ye -> pure $ Left $ InvalidYaml $ Just ye

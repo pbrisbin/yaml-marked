@@ -34,7 +34,6 @@ library
       Data.Yaml.Marked.Decode
       Data.Yaml.Marked.Internal
       Data.Yaml.Marked.Parse
-      Data.Yaml.Marked.ParseException
       Data.Yaml.Marked.Replace
       Data.Yaml.Marked.Value
   other-modules:
@@ -180,6 +179,7 @@ test-suite spec
     , bytestring
     , hspec
     , hspec-expectations-json
+    , semigroupoids
     , text
     , yaml
     , yaml-marked

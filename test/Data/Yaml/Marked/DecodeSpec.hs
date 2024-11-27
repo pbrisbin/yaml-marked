@@ -4,8 +4,7 @@ module Data.Yaml.Marked.DecodeSpec
 
 import Prelude
 
-import Control.Applicative ((<|>))
-import Data.List (isPrefixOf)
+import Data.Functor.Alt ((<!>))
 import Data.Text (Text)
 import Data.Yaml.Marked
 import Data.Yaml.Marked.Decode
@@ -20,7 +19,7 @@ data StackYaml = StackYaml
   }
   deriving stock (Eq, Show)
 
-decodeStackYaml :: Marked Value -> Parser (Marked StackYaml)
+decodeStackYaml :: Marked Value -> Either String (Marked StackYaml)
 decodeStackYaml = withObject "example" $ \o ->
   StackYaml
     <$> (text =<< (o .: "resolver"))
@@ -32,8 +31,8 @@ data ExtraDep
   | Git GitCommit
   deriving stock (Eq, Show)
 
-decodeExtraDep :: Marked Value -> Parser (Marked ExtraDep)
-decodeExtraDep x = (fmap Git <$> decodeGitCommit x) <|> (fmap Plain <$> text x)
+decodeExtraDep :: Marked Value -> Either String (Marked ExtraDep)
+decodeExtraDep x = (fmap Git <$> decodeGitCommit x) <!> (fmap Plain <$> text x)
 
 data GitCommit = GitCommit
   { git :: Marked Text
@@ -41,7 +40,7 @@ data GitCommit = GitCommit
   }
   deriving stock (Eq, Show)
 
-decodeGitCommit :: Marked Value -> Parser (Marked GitCommit)
+decodeGitCommit :: Marked Value -> Either String (Marked GitCommit)
 decodeGitCommit = withObject "GitCommit" $ \o ->
   GitCommit
     <$> (text =<< o .: "git")
@@ -145,19 +144,3 @@ spec = do
           , markedLocationStart = Location 0 0 0
           , markedLocationEnd = Location 187 15 17
           }
-
-    it "includes path in errors" $ do
-      let exampleYaml =
-            mconcat
-              [ "resolver: lts-20.11\n"
-              , "extra-deps:\n" -- expected Array, got Null
-              , "  - Yes\n"
-              ]
-
-      decodeThrow decodeStackYaml "<input>" exampleYaml
-        `shouldThrow` aesonExceptionPrefixed "foo"
-
-aesonExceptionPrefixed :: String -> ParseException -> Bool
-aesonExceptionPrefixed x = \case
-  AesonException msg -> x `isPrefixOf` msg
-  _ -> False

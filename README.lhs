@@ -76,7 +76,7 @@ Instead of making a `FromJSON` instance, you just define a function. The
 `Data.Yaml.Marked.Parse` module exposes combinators to accomplish this:
 
 ```haskell
-decodeStackYaml :: Marked Value -> Parser (Marked StackYaml)
+decodeStackYaml :: Marked Value -> Either String (Marked StackYaml)
 decodeStackYaml = withObject "StackYaml" $ \o ->
   StackYaml
     <$> (text =<< (o .: "resolver"))

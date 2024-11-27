@@ -11,7 +11,7 @@ import Prelude
 import Data.Aeson (FromJSON (..))
 import qualified Data.Aeson as Aeson
 import Data.Aeson.Compat.KeyMap (KeyMap)
-import Data.Aeson.Types (Parser)
+import Data.Aeson.Types (parseEither)
 import Data.Scientific (Scientific)
 import Data.Text (Text)
 import Data.Vector (Vector)
@@ -31,8 +31,8 @@ type MarkedObject = KeyMap (Marked Value)
 type MarkedArray = Vector (Marked Value)
 
 -- | Parse the value using its 'FromJSON', discarding any marks
-valueAsJSON :: FromJSON a => Value -> Parser a
-valueAsJSON = parseJSON . valueToValue
+valueAsJSON :: FromJSON a => Value -> Either String a
+valueAsJSON = parseEither parseJSON . valueToValue
 
 -- | Convert a 'Value' to an equivalent 'Data.Aeson.Value'
 valueToValue :: Value -> Aeson.Value
