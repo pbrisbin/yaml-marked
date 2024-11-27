@@ -10,7 +10,7 @@ module Data.Aeson.Compat.Key
 #if MIN_VERSION_aeson(2, 0, 0)
 import Data.Aeson.Key
 #else
-import Prelude (id)
+import Prelude
 import Data.Text (Text, unpack)
 
 type Key = Text
