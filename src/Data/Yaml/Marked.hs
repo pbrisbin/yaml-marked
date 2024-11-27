@@ -9,12 +9,14 @@ module Data.Yaml.Marked
 
 import Prelude
 
+import Data.Aeson (JSONPath)
 import Numeric.Natural
 import Text.Libyaml (Event, MarkedEvent (..), YamlMark (..))
 
 data Marked a = Marked
   { markedItem :: a
   , markedPath :: FilePath
+  , markedJSONPath :: Maybe JSONPath
   , markedLocationStart :: Location
   -- ^ Location of the first character of the item
   --
@@ -59,6 +61,7 @@ fromMarkedEvent MarkedEvent {..} fp =
   Marked
     { markedItem = yamlEvent
     , markedPath = fp
+    , markedJSONPath = Nothing
     , markedLocationStart = locationFromYamlMark yamlStartMark
     , markedLocationEnd = locationFromYamlMark yamlEndMark
     }
