@@ -95,7 +95,6 @@ tests:
       - bytestring
       - hspec
       - hspec-expectations-json
-      - semigroupoids
       - text
       - yaml
       - yaml-marked
