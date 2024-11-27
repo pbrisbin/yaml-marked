@@ -11,7 +11,7 @@ module Data.Aeson.Compat.Key
 import Data.Aeson.Key
 #else
 import Prelude (id)
-import Data.Text (Text, unpac)
+import Data.Text (Text, unpack)
 
 type Key = Text
 
