@@ -121,6 +121,7 @@ decodeHelper parse fp src =
     Marked
       { markedItem = Null
       , markedPath = fp
+      , markedJSONPath = Nothing
       , markedLocationStart = Location 0 0 0
       , markedLocationEnd = Location 0 0 0
       }
@@ -213,10 +214,12 @@ parseSequence startLocation mEndLocation !n a front =
   peekC >>= \case
     Just me | EventSequenceEnd <- markedItem me -> do
       dropC 1
+      path <- asks reverse
       let res =
             Marked
               { markedItem = Array $ V.fromList $ front []
               , markedPath = markedPath me
+              , markedJSONPath = Just path
               , markedLocationStart = startLocation
               , markedLocationEnd = fromMaybe startLocation mEndLocation
               }
@@ -238,10 +241,12 @@ parseMapping
 parseMapping startLocation mEndLocation mergedKeys a front =
   headC >>= \case
     Just me | EventMappingEnd <- markedItem me -> do
+      path <- asks reverse
       let res =
             Marked
               { markedItem = Object front
               , markedPath = markedPath me
+              , markedJSONPath = Just path
               , markedLocationStart = startLocation
               , markedLocationEnd = fromMaybe startLocation mEndLocation
               }
@@ -255,7 +260,7 @@ parseMapping startLocation mEndLocation mergedKeys a front =
           | EventAlias an <- markedItem me' ->
               lookupAliasKey an
         _ -> do
-          path <- ask
+          path <- asks reverse
           throwIO $ NonStringKey path
 
       ((mergedKeys', al'), endLocation) <- local (Key s :) $ do
@@ -303,7 +308,9 @@ parseScalar
   -> ConduitT (Marked Event) o Parse (Marked Value)
 parseScalar me v tag style a = do
   s <- parseScalarText me v tag style a
-  pure $ textToValue style tag s <$ me
+  let mv = textToValue style tag s <$ me
+  path <- lift $ asks reverse
+  pure $ mv {markedJSONPath = Just path}
 
 parseScalarKey
   :: Marked Event
