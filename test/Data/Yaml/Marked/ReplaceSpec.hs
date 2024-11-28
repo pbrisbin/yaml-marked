@@ -35,6 +35,14 @@ spec = do
       runReplaces rs "this text will be hot"
         `shouldReturn` "that text won't be cold"
 
+    it "works for adjacent replaces" $ do
+      let rs =
+            [ newReplace 0 4 ""
+            , newReplace 4 4 ""
+            ]
+
+      runReplaces rs "012\n012\n012\n" `shouldReturn` "012\n"
+
     context "validations" $ do
       it "ReplaceOutOfBounds" $ do
         let r = newReplace 0 3 ""
