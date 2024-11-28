@@ -1,4 +1,8 @@
-## [_Unreleased_](https://github.com/pbrisbin/yaml-marked/compare/v0.1.0.0...main)
+## [_Unreleased_](https://github.com/pbrisbin/yaml-marked/compare/v0.2.0.1...main)
+
+## [v0.2.0.1](https://github.com/pbrisbin/yaml-marked/compare/v0.2.0.0...v0.2.0.1)
+
+- Correctly accept adjacent replaces as non-overlapping
 
 ## [v0.2.0.0](https://github.com/pbrisbin/yaml-marked/compare/v0.1.0.0...v0.2.0.0)
 
