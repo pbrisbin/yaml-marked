@@ -108,7 +108,7 @@ filterOverlapping onOverlap = go []
     | otherwise = go (acc <> [r]) rs
 
 precedesEndOf :: Replace -> Replace -> Bool
-precedesEndOf a b = replaceIndex a <= replaceIndex b + replacedLength b
+precedesEndOf a b = replaceIndex a < replaceIndex b + replacedLength b
 
 -- | Break a 'ByteString' into the content before/after a replacement
 --
